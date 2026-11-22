@@ -438,10 +438,174 @@ class PersonFigureTest {
     }
 
     @Test fun padTopRatio_parasolStillBeatsTheCap() {
-        // Cap + parasol together: the parasol's tall pad wins.
-        val s = spec19(0, uvMax = 9.0).copy(held = PersonHeld.PARASOL)
+        // Until v0.1.25 this pinned the FALLBACK parasol's 0.34
+        // against the cap on rank 0 — but since v0.1.26 rank 0's
+        // parasol is the polo arm picture, grip-anchored at the
+        // person top (poke ≈ 0), so the cap's own poke decides
+        // there. The fallback's 0.34 still wins wherever no arm
+        // parasol serves — here on the rank-5 portrait.
+        val s = spec19(5, uvMax = 9.0)
+        assertEquals(PersonHeld.PARASOL, s.held)
         assertEquals(PersonHead.CAP, s.head)
         assertEquals(0.34f, PersonFigure.padTopRatio(s), 0.001f)
+        val s0 = spec19(0, uvMax = 9.0).copy(held = PersonHeld.PARASOL)
+        assertEquals(PersonHead.CAP, s0.head)
+        assertEquals(0.04f, PersonFigure.padTopRatio(s0), 0.001f)
+    }
+
+    // ---- v0.1.26: arm layers + umbrella variants ----
+
+    @Test fun armArt_followsSleeveGroups() {
+        // Polo group (ranks 0–1) has all four items; the cardigan
+        // group (ranks 2–3) and the knit coat (rank 4) have the
+        // two umbrellas; anything else falls back to the old
+        // grip-point drawing (null).
+        for (top in listOf(PersonTop.TSHIRT, PersonTop.SHIRT)) {
+            assertEquals(PersonArt.ARM_POLO_OPEN, PersonAnchors.armArt(top, PersonHeld.OPEN))
+            assertEquals(PersonArt.ARM_POLO_FOLDING, PersonAnchors.armArt(top, PersonHeld.FOLDED))
+            assertEquals(PersonArt.ARM_POLO_PARASOL, PersonAnchors.armArt(top, PersonHeld.PARASOL))
+            assertEquals(PersonArt.ARM_POLO_UCHIWA, PersonAnchors.armArt(top, PersonHeld.UCHIWA))
+        }
+        for (top in listOf(PersonTop.CARDIGAN, PersonTop.LIGHT_OUTER)) {
+            assertEquals(PersonArt.ARM_CARDIGAN_OPEN, PersonAnchors.armArt(top, PersonHeld.OPEN))
+            assertEquals(PersonArt.ARM_CARDIGAN_FOLDING, PersonAnchors.armArt(top, PersonHeld.FOLDED))
+            assertEquals(null, PersonAnchors.armArt(top, PersonHeld.PARASOL))
+            assertEquals(null, PersonAnchors.armArt(top, PersonHeld.UCHIWA))
+        }
+        assertEquals(PersonArt.ARM_KNITCOAT_OPEN, PersonAnchors.armArt(PersonTop.KNIT_COAT, PersonHeld.OPEN))
+        assertEquals(PersonArt.ARM_KNITCOAT_FOLDING, PersonAnchors.armArt(PersonTop.KNIT_COAT, PersonHeld.FOLDED))
+        assertEquals(null, PersonAnchors.armArt(PersonTop.KNIT_COAT, PersonHeld.PARASOL))
+        assertEquals(null, PersonAnchors.armArt(PersonTop.DOWN, PersonHeld.OPEN))
+        assertEquals(null, PersonAnchors.armArt(null, PersonHeld.OPEN))
+        assertEquals(null, PersonAnchors.armArt(PersonTop.TSHIRT, PersonHeld.NONE))
+    }
+
+    @Test fun variantArt_onlyPortraitsAndRaincoat() {
+        assertEquals(PersonArt.FIG_RANK5_OPEN, PersonAnchors.variantArt(PersonBase.RANK5_PORTRAIT, PersonHeld.OPEN))
+        assertEquals(PersonArt.FIG_RANK5_FOLDING, PersonAnchors.variantArt(PersonBase.RANK5_PORTRAIT, PersonHeld.FOLDED))
+        assertEquals(PersonArt.FIG_RANK6_OPEN, PersonAnchors.variantArt(PersonBase.RANK6_PORTRAIT, PersonHeld.OPEN))
+        assertEquals(PersonArt.FIG_RANK6_FOLDING, PersonAnchors.variantArt(PersonBase.RANK6_PORTRAIT, PersonHeld.FOLDED))
+        assertEquals(PersonArt.FIG_RAINCOAT_OPEN, PersonAnchors.variantArt(PersonBase.RAINCOAT, PersonHeld.OPEN))
+        assertEquals(PersonArt.FIG_RAINCOAT_FOLDING, PersonAnchors.variantArt(PersonBase.RAINCOAT, PersonHeld.FOLDED))
+        for (base in listOf(PersonBase.BODY_A, PersonBase.BODY_B, PersonBase.BODY_C)) {
+            assertEquals(null, PersonAnchors.variantArt(base, PersonHeld.OPEN))
+        }
+        for (held in listOf(PersonHeld.NONE, PersonHeld.PARASOL, PersonHeld.UCHIWA)) {
+            assertEquals(null, PersonAnchors.variantArt(PersonBase.RANK5_PORTRAIT, held))
+            assertEquals(null, PersonAnchors.variantArt(PersonBase.RAINCOAT, held))
+        }
+    }
+
+    @Test fun armRect_putsTheGripAndShaftOnTheHand() {
+        // The verified previews' placement, pinned: the grip point
+        // lands exactly on the rig's right hand; the open
+        // umbrellas stand their shaft on the hand instead. Solved
+        // on a concrete rect for every arm picture and the rig of
+        // the body it was tuned on (the polo pictures serve both
+        // bodies: BODY_B for the tee, BODY_A for the shirt).
+        val cases = listOf(
+            Triple(PersonArt.ARM_POLO_OPEN, PersonBase.BODY_B, PersonBase.BODY_A),
+            Triple(PersonArt.ARM_POLO_FOLDING, PersonBase.BODY_B, PersonBase.BODY_A),
+            Triple(PersonArt.ARM_POLO_PARASOL, PersonBase.BODY_B, PersonBase.BODY_A),
+            Triple(PersonArt.ARM_POLO_UCHIWA, PersonBase.BODY_B, PersonBase.BODY_A),
+            Triple(PersonArt.ARM_CARDIGAN_OPEN, PersonBase.BODY_A, PersonBase.BODY_A),
+            Triple(PersonArt.ARM_CARDIGAN_FOLDING, PersonBase.BODY_A, PersonBase.BODY_A),
+            Triple(PersonArt.ARM_KNITCOAT_OPEN, PersonBase.BODY_A, PersonBase.BODY_A),
+            Triple(PersonArt.ARM_KNITCOAT_FOLDING, PersonBase.BODY_A, PersonBase.BODY_A)
+        )
+        val bl = 100f
+        val pt = 200f
+        val bw = 400f
+        val ph = 1000f
+        for ((art, rigA, rigB) in cases) {
+            val a = PersonAnchors.armAnchor(art)
+            val (iw, ih) = PersonAnchors.armPx(art)
+            for (base in listOf(rigA, rigB)) {
+                val rig = PersonRigs.rig(base)
+                val r = PersonAnchors.armRect(art, rig, bl, pt, bw, ph)
+                val handX = bl + rig.handRx * bw
+                val handY = pt + rig.handRy * ph
+                assertEquals("$art $base height", a.dhFrac * ph, r[3], 0.01f)
+                val expectW = a.dwFrac?.let { it * bw } ?: a.dhFrac * ph * iw / ih
+                assertEquals("$art $base width", expectW, r[2], 0.01f)
+                if (a.shaftX != null) {
+                    assertEquals("$art $base shaft on hand", handX, r[0] + a.shaftX * r[2], 0.01f)
+                } else {
+                    assertEquals("$art $base grip x on hand", handX, r[0] + a.gripX * r[2], 0.01f)
+                }
+                assertEquals("$art $base grip y on hand", handY, r[1] + a.gripY * r[3], 0.01f)
+            }
+        }
+        // The shipped pixel sizes stay as measured.
+        assertEquals(626 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_OPEN))
+        assertEquals(283 to 1024, PersonAnchors.armPx(PersonArt.ARM_CARDIGAN_FOLDING))
+        assertEquals(282 to 1024, PersonAnchors.armPx(PersonArt.ARM_KNITCOAT_FOLDING))
+    }
+
+    @Test fun variantInner_staysSane() {
+        // The measured inner rects (tools/measure26b.py): the base
+        // picture's boots land on the variant's bottom (y1 ≈ 1) —
+        // the figure stands — and the folded variants kept their
+        // figures in place (y0 ≈ 0), while the open ones sit lower
+        // under their canopies.
+        val arts = listOf(
+            PersonArt.FIG_RANK5_OPEN, PersonArt.FIG_RANK5_FOLDING,
+            PersonArt.FIG_RANK6_OPEN, PersonArt.FIG_RANK6_FOLDING,
+            PersonArt.FIG_RAINCOAT_OPEN, PersonArt.FIG_RAINCOAT_FOLDING
+        )
+        for (art in arts) {
+            val r = PersonAnchors.variantInner(art)
+            assertTrue("$art ordered", r[0] < r[2] && r[1] < r[3])
+            assertTrue("$art in range", r.all { it in -0.05f..1.05f })
+            assertTrue("$art boots on the bottom ${r[3]}", r[3] in 0.99f..1.01f)
+        }
+        for (art in listOf(
+            PersonArt.FIG_RANK5_FOLDING, PersonArt.FIG_RANK6_FOLDING,
+            PersonArt.FIG_RAINCOAT_FOLDING
+        )) {
+            val r = PersonAnchors.variantInner(art)
+            assertTrue("$art figure unmoved ${r[1]}", r[1] in -0.01f..0.01f)
+            assertEquals(0f, PersonAnchors.variantPoke(
+                when (art) {
+                    PersonArt.FIG_RANK5_FOLDING -> PersonBase.RANK5_PORTRAIT
+                    PersonArt.FIG_RANK6_FOLDING -> PersonBase.RANK6_PORTRAIT
+                    else -> PersonBase.RAINCOAT
+                }, PersonHeld.FOLDED), 0.001f)
+        }
+        for (art in listOf(
+            PersonArt.FIG_RANK5_OPEN, PersonArt.FIG_RANK6_OPEN,
+            PersonArt.FIG_RAINCOAT_OPEN
+        )) {
+            val r = PersonAnchors.variantInner(art)
+            assertTrue("$art figure lowered ${r[1]}", r[1] in 0.09f..0.18f)
+        }
+    }
+
+    @Test fun padTop_umbrellaPictures() {
+        // Open-umbrella days pad by the picture that pokes above
+        // the person: the arm canopies on the layered ranks, the
+        // variant frames on the portraits / raincoat.
+        assertEquals(0.18f, PersonFigure.padTopRatio(spec19(0, Rules.UmbrellaLevel.NEED)), 0.001f)
+        assertEquals(0.17f, PersonFigure.padTopRatio(spec19(1, Rules.UmbrellaLevel.NEED)), 0.001f)
+        assertEquals(0.13f, PersonFigure.padTopRatio(spec19(5, Rules.UmbrellaLevel.NEED)), 0.001f)
+        assertEquals(0.12f, PersonFigure.padTopRatio(spec19(6, Rules.UmbrellaLevel.NEED)), 0.001f)
+        // Rank 3 + NEED is a raincoat day: the raincoat variant's
+        // canopy room is the tallest of the set.
+        assertEquals(0.21f, PersonFigure.padTopRatio(spec19(3, Rules.UmbrellaLevel.NEED)), 0.001f)
+        // The cardigan / knit-coat arm canopies (test-screen
+        // combos: the auto rules make ranks 2–4 umbrella days into
+        // raincoat days) measure like the polo one.
+        assertEquals(
+            0.17f,
+            PersonFigure.padTopRatio(spec19(2).copy(held = PersonHeld.OPEN)), 0.001f
+        )
+        assertEquals(
+            0.18f,
+            PersonFigure.padTopRatio(spec19(4).copy(held = PersonHeld.OPEN)), 0.001f
+        )
+        // Folded days poke nothing: no pad at all on a bare head.
+        assertEquals(0f, PersonFigure.padTopRatio(spec19(5, Rules.UmbrellaLevel.FOLDING)), 0.001f)
+        assertEquals(0f, PersonFigure.padTopRatio(spec19(0, Rules.UmbrellaLevel.FOLDING)), 0.001f)
     }
 
     @Test fun rigsAndCanvasBoxes_stayInRange() {

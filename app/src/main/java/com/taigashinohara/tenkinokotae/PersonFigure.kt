@@ -73,6 +73,25 @@ import kotlin.math.roundToInt
  * user's open question, so the arm layers wait in
  * tools/layers_keyed/, unused.
  *
+ * v0.1.26 (docs/FEATURE_v0.1.26.md) settles that question the way
+ * the user proposed (「その腕は服装ごとに用意しておくべき」) and
+ * then grouped (sleeve groups, not one image per rank): the held
+ * items are now drawn as ARM LAYERS — one generated picture of the
+ * sleeve + arm + hand + item, made per sleeve group (the polo
+ * group serves ranks 0–1, the cardigan group ranks 2–3, the knit
+ * coat is rank 4's own) from the outfit's own sleeve, so the arm
+ * arrives already wearing the day's clothes and the body's own
+ * arm is covered, never doubled. The hybrid portraits and the
+ * raincoat take the same idea whole: on an umbrella day the base
+ * picture itself is swapped for a generated variant that already
+ * holds the umbrella (open or folded), drawn so the variant's
+ * inner rect — where the base picture lives inside it, measured
+ * in tools/measure26b.py — lands on the standard person rect,
+ * keeping every rig anchor valid. Combos with no arm picture
+ * (the parasol / fan outside the polo group, a hand-built spec)
+ * keep the v0.1.22 grip-point drawing as the fallback. The
+ * generic bare-arm set from v0.1.25 still waits unused.
+ *
  * v0.1.21 (docs/FIX_v0.1.21.md) extends the hybrid call to rank 6:
  * the down top is a closed-collar product shot with no face opening
  * at all, so laid over the wide body it swallowed the whole face —
@@ -132,7 +151,14 @@ enum class PersonArt {
     LAYER_HEAD_CAP, LAYER_HEAD_KNITCAP,
     PROP_MASK, PROP_SUNGLASSES, PROP_MUFFLER,
     PROP_MITTEN_L, PROP_MITTEN_R, PROP_TOWEL, PROP_PARASOL, PROP_UCHIWA,
-    PROP_FOLDING
+    PROP_FOLDING,
+    // v0.1.26: sleeve-group arm layers (sleeve + arm + item in one
+    // picture) and the umbrella variants of the portrait bases.
+    ARM_POLO_OPEN, ARM_POLO_FOLDING, ARM_POLO_PARASOL, ARM_POLO_UCHIWA,
+    ARM_CARDIGAN_OPEN, ARM_CARDIGAN_FOLDING,
+    ARM_KNITCOAT_OPEN, ARM_KNITCOAT_FOLDING,
+    FIG_RANK5_OPEN, FIG_RANK5_FOLDING, FIG_RANK6_OPEN, FIG_RANK6_FOLDING,
+    FIG_RAINCOAT_OPEN, FIG_RAINCOAT_FOLDING
 }
 
 /** The outfit-linked elements of a spec (v0.1.20); see
@@ -330,17 +356,34 @@ object PersonFigure {
 
     /**
      * How much headroom above the person the composition needs, as a
-     * fraction of the person's height: the parasol's canopy rides
-     * well above the head (0.34, the standing rule since v0.1.19),
-     * and a head layer (v0.1.25) pokes above the person top by a
-     * measured amount per base — its dome stands taller than the
-     * hair it replaces — so the pad covers that base's poke,
-     * rounded up to the next 0.01. [PersonComposer] shrinks the
-     * person into the given rect by this much; callers sizing a
-     * view for a known person height multiply by (1 + padTopRatio).
+     * fraction of the person's height: every picture that pokes
+     * above the person top contributes its measured poke, rounded
+     * up to the next 0.01 — a head layer (v0.1.25, its dome stands
+     * taller than the hair it replaces), an arm layer's umbrella
+     * canopy (v0.1.26), or an umbrella variant portrait whose inner
+     * person sits lower in its frame (v0.1.26). The one flat rule
+     * left is the FALLBACK parasol's 0.34 (the standing rule since
+     * v0.1.19): the old floating asset rides well above the head,
+     * but only where no arm-layer parasol serves — the polo group's
+     * arm parasol is grip-anchored at the person top and needs no
+     * room of its own. [PersonComposer] shrinks the person into
+     * the given rect by this much; callers sizing a view for a
+     * known person height multiply by (1 + padTopRatio).
      */
     fun padTopRatio(spec: PersonSpec): Float {
-        var pad = if (spec.held == PersonHeld.PARASOL) 0.34f else 0f
+        var pad = 0f
+        val arm = PersonAnchors.armArt(spec.top, spec.held)
+        if (spec.held == PersonHeld.PARASOL && arm == null) pad = 0.34f
+        if (arm != null) {
+            val poke = PersonAnchors.armPoke(spec.base, spec.top, spec.held)
+            if (poke > 0f) {
+                pad = maxOf(pad, ceil((poke + 0.005f) * 100f) / 100f)
+            }
+        }
+        val vPoke = PersonAnchors.variantPoke(spec.base, spec.held)
+        if (vPoke > 0f) {
+            pad = maxOf(pad, ceil((vPoke + 0.005f) * 100f) / 100f)
+        }
         if (spec.head != PersonHead.NONE) {
             val poke = PersonAnchors.headLayerPoke(spec.base, spec.head)
             pad = maxOf(pad, ceil((poke + 0.005f) * 100f) / 100f)
@@ -566,6 +609,30 @@ data class PersonRig(
     val faceW: Float get() = faceRight - faceLeft
     val faceH: Float get() = faceBottom - faceTop
 }
+
+/**
+ * The measured anchor of one v0.1.26 arm layer (sleeve + arm +
+ * held item as one generated picture): where the gripping hand
+ * sits inside the picture ([gripX] / [gripY], asset fractions),
+ * where the umbrella shaft stands ([shaftX], open umbrellas only —
+ * they are anchored horizontally on the shaft, not the grip), how
+ * big the picture is drawn ([dhFrac] of the person height always;
+ * [dwFrac] of the body width where the batch solved a width, else
+ * the asset's own aspect), and the tilt the verified previews
+ * applied ([rotDeg], PIL convention — counter-clockwise positive,
+ * about the grip; the composer negates it for Canvas, whose
+ * positive rotation is clockwise). Measured by eye from the keyed
+ * PNGs in tools/sleeve_arms/preview_sleeve_arms.py, the placement
+ * source of truth.
+ */
+data class ArmAnchor(
+    val gripX: Float,
+    val gripY: Float,
+    val shaftX: Float?,
+    val dwFrac: Float?,
+    val dhFrac: Float,
+    val rotDeg: Float
+)
 
 object PersonRigs {
     fun rig(base: PersonBase): PersonRig = when (base) {
@@ -897,16 +964,221 @@ object PersonAnchors {
         gripX: Float, gripY: Float, propW: Float, propH: Float,
         handX: Float, handY: Float
     ): FloatArray = floatArrayOf(handX - gripX * propW, handY - gripY * propH)
+
+    // ---- v0.1.26 arm layers: sleeve + arm + item as ONE picture ----
+
+    /** Pixel sizes of the arm-layer assets (measured from the
+     * shipped PNGs, keyed in tools/sleeve_arms/). */
+    fun armPx(art: PersonArt): Pair<Int, Int> = when (art) {
+        PersonArt.ARM_POLO_OPEN -> 626 to 1024
+        PersonArt.ARM_POLO_FOLDING -> 290 to 1024
+        PersonArt.ARM_POLO_PARASOL -> 579 to 1024
+        PersonArt.ARM_POLO_UCHIWA -> 540 to 1024
+        PersonArt.ARM_CARDIGAN_OPEN -> 626 to 1024
+        PersonArt.ARM_CARDIGAN_FOLDING -> 283 to 1024
+        PersonArt.ARM_KNITCOAT_OPEN -> 625 to 1024
+        PersonArt.ARM_KNITCOAT_FOLDING -> 282 to 1024
+        else -> 1 to 1
+    }
+
+    /** The measured anchor of one arm layer (see [ArmAnchor]).
+     * Values are the placement source of truth from
+     * tools/sleeve_arms/preview_sleeve_arms.py (the ARM table),
+     * whose composites were verified by eye before the batch was
+     * adopted. */
+    fun armAnchor(art: PersonArt): ArmAnchor = when (art) {
+        PersonArt.ARM_POLO_OPEN ->
+            ArmAnchor(0.83f, 0.84f, 0.815f, 1.20f, 0.95f, 0f)
+        PersonArt.ARM_POLO_FOLDING ->
+            ArmAnchor(0.40f, 0.40f, null, null, 0.70f, 12f)
+        PersonArt.ARM_POLO_PARASOL ->
+            ArmAnchor(0.655f, 0.955f, null, 1.10f, 0.66f, 0f)
+        PersonArt.ARM_POLO_UCHIWA ->
+            ArmAnchor(0.47f, 0.93f, null, null, 0.40f, -16f)
+        PersonArt.ARM_CARDIGAN_OPEN ->
+            ArmAnchor(0.57f, 0.84f, 0.545f, 1.20f, 0.95f, 0f)
+        PersonArt.ARM_CARDIGAN_FOLDING ->
+            ArmAnchor(0.42f, 0.40f, null, null, 0.70f, 24f)
+        PersonArt.ARM_KNITCOAT_OPEN ->
+            ArmAnchor(0.79f, 0.85f, 0.775f, 1.20f, 0.95f, 0f)
+        PersonArt.ARM_KNITCOAT_FOLDING ->
+            ArmAnchor(0.42f, 0.40f, null, null, 0.70f, 24f)
+        else -> ArmAnchor(0.5f, 0.5f, null, null, 0f, 0f)
+    }
+
+    /**
+     * The arm layer serving a (top, held) pair, or null where the
+     * batch has no picture — the composer then falls back to the
+     * v0.1.22 grip-point drawing. Sleeve groups (the user's
+     * grouping): the polo group serves the short-sleeve tops
+     * (ranks 0–1: TSHIRT and SHIRT), the cardigan group the thin
+     * long sleeves (ranks 2–3: CARDIGAN and LIGHT_OUTER), and the
+     * knit coat is rank 4's own. The parasol and the fan exist
+     * only in the polo group — the auto rules only ever raise
+     * them on the hottest days; any other top asking for them
+     * (the test screen can) takes the fallback.
+     */
+    fun armArt(top: PersonTop?, held: PersonHeld): PersonArt? {
+        val polo = top == PersonTop.TSHIRT || top == PersonTop.SHIRT
+        val cardigan = top == PersonTop.CARDIGAN || top == PersonTop.LIGHT_OUTER
+        val knit = top == PersonTop.KNIT_COAT
+        return when (held) {
+            PersonHeld.OPEN -> when {
+                polo -> PersonArt.ARM_POLO_OPEN
+                cardigan -> PersonArt.ARM_CARDIGAN_OPEN
+                knit -> PersonArt.ARM_KNITCOAT_OPEN
+                else -> null
+            }
+            PersonHeld.FOLDED -> when {
+                polo -> PersonArt.ARM_POLO_FOLDING
+                cardigan -> PersonArt.ARM_CARDIGAN_FOLDING
+                knit -> PersonArt.ARM_KNITCOAT_FOLDING
+                else -> null
+            }
+            PersonHeld.PARASOL ->
+                if (polo) PersonArt.ARM_POLO_PARASOL else null
+            PersonHeld.UCHIWA ->
+                if (polo) PersonArt.ARM_POLO_UCHIWA else null
+            PersonHeld.NONE -> null
+        }
+    }
+
+    /**
+     * Where an arm layer lands: (left, top, width, height) in the
+     * person rect's units ((bl, pt) its top-left, bw × ph its
+     * size), BEFORE the layer's rotation — the composer rotates
+     * about the grip point, which this rect puts exactly on the
+     * rig's right hand. The open umbrellas are shaft-anchored
+     * horizontally (the shaft's x IS the hand's x, as in the
+     * v0.1.22 drawing) and grip-anchored vertically; everything
+     * else is grip-anchored on both axes. The drawn height is
+     * [ArmAnchor.dhFrac] of the person height; the width follows
+     * [ArmAnchor.dwFrac] of the body width where the batch solved
+     * one (the canopies are wider than the body), else the asset's
+     * own aspect. Mirrors tools/sleeve_arms/preview_sleeve_arms.py.
+     * Pure math, unit-tested.
+     */
+    fun armRect(
+        art: PersonArt, rig: PersonRig,
+        bl: Float, pt: Float, bw: Float, ph: Float
+    ): FloatArray {
+        val a = armAnchor(art)
+        val (iw, ih) = armPx(art)
+        val dh = a.dhFrac * ph
+        val dw = a.dwFrac?.let { it * bw } ?: dh * iw / ih
+        val hx = bl + rig.handRx * bw
+        val hy = pt + rig.handRy * ph
+        val left = hx - (a.shaftX ?: a.gripX) * dw
+        val top = hy - a.gripY * dh
+        return floatArrayOf(left, top, dw, dh)
+    }
+
+    /** How far an arm layer pokes above the person top, as a
+     * fraction of the person height (0 when it stays inside):
+     * [armRect] solved on a unit person rect of the base's own
+     * aspect. Only the canopies reach up there — the folded
+     * umbrella and the fan hang from the hand, far below the top,
+     * and their rotation about the grip never lifts them near it.
+     * [PersonFigure.padTopRatio] pads by this. */
+    fun armPoke(base: PersonBase, top: PersonTop?, held: PersonHeld): Float {
+        val art = armArt(top, held) ?: return 0f
+        val r = armRect(
+            art, PersonRigs.rig(base),
+            0f, 0f, PersonCanvas.bodyAspect(base), 1f
+        )
+        return maxOf(0f, -r[1])
+    }
+
+    // ---- v0.1.26 umbrella variants of the portrait bases ----
+
+    /**
+     * The umbrella variant of a portrait / raincoat base for a
+     * held state, or null where the day keeps the base picture:
+     * on an OPEN or FOLDED day the base is swapped whole for the
+     * generated picture that already holds that umbrella, and no
+     * held item is drawn over it. The layered bases have no
+     * variants (their arm layers serve instead), and neither do
+     * the parasol / fan (the fallback drawing serves them).
+     */
+    fun variantArt(base: PersonBase, held: PersonHeld): PersonArt? =
+        when (base) {
+            PersonBase.RANK5_PORTRAIT -> when (held) {
+                PersonHeld.OPEN -> PersonArt.FIG_RANK5_OPEN
+                PersonHeld.FOLDED -> PersonArt.FIG_RANK5_FOLDING
+                else -> null
+            }
+            PersonBase.RANK6_PORTRAIT -> when (held) {
+                PersonHeld.OPEN -> PersonArt.FIG_RANK6_OPEN
+                PersonHeld.FOLDED -> PersonArt.FIG_RANK6_FOLDING
+                else -> null
+            }
+            PersonBase.RAINCOAT -> when (held) {
+                PersonHeld.OPEN -> PersonArt.FIG_RAINCOAT_OPEN
+                PersonHeld.FOLDED -> PersonArt.FIG_RAINCOAT_FOLDING
+                else -> null
+            }
+            else -> null
+        }
+
+    /**
+     * The inner rect of a variant picture: (x0, y0, x1, y1) in the
+     * variant's own fractions — where the base picture's
+     * (0,0)–(1,1) lives inside it. The generated edits are not
+     * rigid transforms of the bases (the figure is redrawn a
+     * little smaller and lower under an open canopy), so the rect
+     * is anchored on what the composer keys on: the face (skin
+     * box + eye line) and the boots, measured per picture in
+     * tools/measure26b.py — its detectors reproduce the shipped
+     * rigs' face boxes to ±0.002 and the eye lines exactly. The
+     * folded variants kept their figures in place (inner ≈
+     * identity, the raincoat's frame is simply wider on the
+     * right); the open ones sit at 0.83–0.90 scale with the person
+     * 0.10–0.17 of the frame lower. The composer draws the
+     * variant so this rect lands exactly on the standard person
+     * rect, so the head layer, mask and sunglasses — all placed
+     * from the base's rig — stay true.
+     */
+    fun variantInner(art: PersonArt): FloatArray = when (art) {
+        PersonArt.FIG_RANK5_OPEN ->
+            floatArrayOf(-0.0017f, 0.1074f, 0.8364f, 0.9999f)
+        PersonArt.FIG_RANK5_FOLDING ->
+            floatArrayOf(0.0002f, -0.0011f, 1.0002f, 1.0000f)
+        PersonArt.FIG_RANK6_OPEN ->
+            floatArrayOf(0.0103f, 0.0984f, 0.8637f, 0.9999f)
+        PersonArt.FIG_RANK6_FOLDING ->
+            floatArrayOf(0.0016f, -0.0023f, 0.9756f, 1.0000f)
+        PersonArt.FIG_RAINCOAT_OPEN ->
+            floatArrayOf(0.0624f, 0.1690f, 0.7201f, 0.9998f)
+        PersonArt.FIG_RAINCOAT_FOLDING ->
+            floatArrayOf(-0.0001f, -0.0007f, 0.8948f, 1.0000f)
+        else -> floatArrayOf(0f, 0f, 1f, 1f)
+    }
+
+    /** How far a variant picture extends above the person top
+     * when its inner rect is landed on the person rect, as a
+     * fraction of the person height (the canopy's room):
+     * innerTop / innerHeight. [PersonFigure.padTopRatio] pads
+     * by this. */
+    fun variantPoke(base: PersonBase, held: PersonHeld): Float {
+        val art = variantArt(base, held) ?: return 0f
+        val r = variantInner(art)
+        return maxOf(0f, r[1] / (r[3] - r[1]))
+    }
 }
 
 /**
  * Draws a [PersonSpec] as a composite of the generated assets: the
  * base (a layered body + top, the hybrid rank-5 portrait, or the
- * raincoat outfit), then neck, mittens, head, face and held layers
- * in that order, then the code-drawn sweat / shiver signs. One
- * routine for both hosts — the in-app [PersonView] and the
- * home-screen widget (which renders it into a Bitmap, since
- * RemoteViews cannot host a custom View).
+ * raincoat outfit — on an umbrella day a portrait / raincoat base
+ * is swapped whole for its umbrella variant, v0.1.26), then the
+ * arm layer where the batch has one (v0.1.26: sleeve + arm + held
+ * item as one picture, over body + top), then neck, mittens, head
+ * and face layers, then the held item — drawn only where neither
+ * an arm layer nor a variant served, as the grip-point fallback —
+ * and finally the code-drawn sweat / shiver signs. One routine for
+ * both hosts — the in-app [PersonView] and the home-screen widget
+ * (which renders it into a Bitmap, since RemoteViews cannot host a
+ * custom View).
  *
  * The given rect is the whole canvas: the person stands at its
  * bottom, shrunk by [PersonFigure.padTopRatio] so a parasol canopy
@@ -953,6 +1225,20 @@ object PersonComposer {
         PersonArt.PROP_PARASOL -> R.drawable.prop_parasol
         PersonArt.PROP_UCHIWA -> R.drawable.prop_uchiwa
         PersonArt.PROP_FOLDING -> R.drawable.prop_folding
+        PersonArt.ARM_POLO_OPEN -> R.drawable.arm_polo_umbrella_open
+        PersonArt.ARM_POLO_FOLDING -> R.drawable.arm_polo_umbrella_folding
+        PersonArt.ARM_POLO_PARASOL -> R.drawable.arm_polo_parasol
+        PersonArt.ARM_POLO_UCHIWA -> R.drawable.arm_polo_uchiwa
+        PersonArt.ARM_CARDIGAN_OPEN -> R.drawable.arm_cardigan_umbrella_open
+        PersonArt.ARM_CARDIGAN_FOLDING -> R.drawable.arm_cardigan_umbrella_folding
+        PersonArt.ARM_KNITCOAT_OPEN -> R.drawable.arm_knitcoat_umbrella_open
+        PersonArt.ARM_KNITCOAT_FOLDING -> R.drawable.arm_knitcoat_umbrella_folding
+        PersonArt.FIG_RANK5_OPEN -> R.drawable.rank5_umbrella_open
+        PersonArt.FIG_RANK5_FOLDING -> R.drawable.rank5_umbrella_folding
+        PersonArt.FIG_RANK6_OPEN -> R.drawable.rank6_umbrella_open
+        PersonArt.FIG_RANK6_FOLDING -> R.drawable.rank6_umbrella_folding
+        PersonArt.FIG_RAINCOAT_OPEN -> R.drawable.raincoat_umbrella_open
+        PersonArt.FIG_RAINCOAT_FOLDING -> R.drawable.raincoat_umbrella_folding
     }
 
     private fun bmp(ctx: Context, art: PersonArt): Bitmap {
@@ -974,9 +1260,27 @@ object PersonComposer {
         val rig = PersonRigs.rig(spec.base)
 
         // ---- base ----
+        // v0.1.26: on an umbrella day a portrait / raincoat base is
+        // swapped whole for its umbrella variant — a generated
+        // picture of the same figure already holding the umbrella.
+        // The variant is drawn so its INNER rect (where the base
+        // picture lives inside it; [PersonAnchors.variantInner])
+        // lands exactly on the standard person rect, so every rig
+        // anchor below stays true and no held item is drawn.
+        val variant = PersonAnchors.variantArt(spec.base, spec.held)
         val bl: Float
         val bw: Float
-        if (spec.base == PersonBase.RANK5_PORTRAIT ||
+        if (variant != null) {
+            val img = bmp(ctx, variant)
+            val inner = PersonAnchors.variantInner(variant)
+            bw = ph * PersonCanvas.bodyAspect(spec.base)
+            bl = left + (width - bw) / 2f
+            val dw = bw / (inner[2] - inner[0])
+            val dh = ph / (inner[3] - inner[1])
+            val dl = bl - inner[0] * dw
+            val dt = pt - inner[1] * dh
+            canvas.drawBitmap(img, null, RectF(dl, dt, dl + dw, dt + dh), paint)
+        } else if (spec.base == PersonBase.RANK5_PORTRAIT ||
             spec.base == PersonBase.RANK6_PORTRAIT
         ) {
             val person = bmp(ctx, PersonCanvas.bodyArt(spec.base))
@@ -1025,6 +1329,43 @@ object PersonComposer {
         fun by(f: Float) = pt + f * ph
         val handX = bx(rig.handRx)
         val handY = by(rig.handRy)
+
+        // ---- arm layer (v0.1.26: sleeve + arm + held item as one
+        //      picture, drawn over body + top. The sleeve arrives
+        //      already wearing the day's top and covers the body's
+        //      own arm, so the arm is never doubled. Where the
+        //      batch has no picture for the combo, [arm] is null
+        //      and the held slot below keeps the v0.1.22
+        //      grip-point drawing as the fallback) ----
+        val arm = PersonAnchors.armArt(spec.top, spec.held)
+        if (arm != null) {
+            val img = bmp(ctx, arm)
+            val a = PersonAnchors.armAnchor(arm)
+            val r = PersonAnchors.armRect(arm, rig, bl, pt, bw, ph)
+            if (a.rotDeg != 0f) {
+                // Rotated about the grip point, which [armRect]
+                // puts exactly on the hand. The batch's angles are
+                // PIL's (counter-clockwise positive); Canvas
+                // rotates clockwise, so the sign flips.
+                canvas.save()
+                canvas.translate(handX, handY)
+                canvas.rotate(-a.rotDeg)
+                canvas.drawBitmap(
+                    img, null,
+                    RectF(
+                        -a.gripX * r[2], -a.gripY * r[3],
+                        -a.gripX * r[2] + r[2], -a.gripY * r[3] + r[3]
+                    ),
+                    paint
+                )
+                canvas.restore()
+            } else {
+                canvas.drawBitmap(
+                    img, null,
+                    RectF(r[0], r[1], r[0] + r[2], r[1] + r[3]), paint
+                )
+            }
+        }
         val hybrid = spec.base == PersonBase.RANK5_PORTRAIT ||
             spec.base == PersonBase.RANK6_PORTRAIT
         // The raincoat is a finished full-body picture (v0.1.20):
@@ -1139,8 +1480,10 @@ object PersonComposer {
             )
         }
 
-        // ---- held ----
-        when (spec.held) {
+        // ---- held (the v0.1.22 grip-point drawing; since v0.1.26
+        //      it is the fallback, serving exactly the combos the
+        //      arm layers and the umbrella variants do not) ----
+        if (variant == null && arm == null) when (spec.held) {
             PersonHeld.OPEN -> {
                 val umb = bmp(ctx, PersonArt.UMBRELLA_OPEN)
                 val uw = PersonAnchors.UMB_WIDTH * bw
