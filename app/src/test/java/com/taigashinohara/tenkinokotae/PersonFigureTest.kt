@@ -442,37 +442,35 @@ class PersonFigureTest {
     @Test fun padTopRatio_parasolStillBeatsTheCap() {
         // The FALLBACK parasol's 0.34 still wins wherever no arm
         // parasol and no portrait serves — here on the rank-5
-        // portrait. On rank 0 the day used to pad by the polo arm
-        // picture (0.12 in v0.1.28); since v0.1.29 the whole-
-        // picture parasol portrait serves instead, and the pad is
-        // its measured poke (0.2644, rounded up to 0.27) — the
-        // suppressed arm's poke and the cap's poke both lose.
+        // portrait. On ranks 0–1 the polo arm parasol serves
+        // again since v0.1.30 (the rain umbrella's own picture
+        // with a repainted canopy), so the pad is the arm
+        // picture's poke — 0.168 → 0.18 on rank 0, 0.160 → 0.17
+        // on rank 1 — and the cap's poke loses to both. The
+        // v0.1.29 whole-picture parasol portraits (poke 0.2644 /
+        // 0.2415) are retired: no variant serves a summer base.
         val s = spec19(5, uvMax = 9.0)
         assertEquals(PersonHeld.PARASOL, s.held)
         assertEquals(PersonHead.CAP, s.head)
         assertEquals(0.34f, PersonFigure.padTopRatio(s), 0.001f)
         val s0 = spec19(0, uvMax = 9.0).copy(held = PersonHeld.PARASOL)
         assertEquals(PersonHead.CAP, s0.head)
-        assertEquals(0.27f, PersonFigure.padTopRatio(s0), 0.001f)
-        // Rank 1's parasol portrait pokes a little less (0.2415
-        // → 0.25); its fan portrait keeps the figure in place, so
-        // a fan day pads by nothing of its own.
+        assertEquals(0.18f, PersonFigure.padTopRatio(s0), 0.001f)
         val s1 = spec19(1, uvMax = 9.0).copy(held = PersonHeld.PARASOL)
-        assertEquals(0.25f, PersonFigure.padTopRatio(s1), 0.001f)
-        assertEquals(0.2644f, PersonAnchors.variantPoke(
+        assertEquals(0.17f, PersonFigure.padTopRatio(s1), 0.001f)
+        assertEquals(0f, PersonAnchors.variantPoke(
             PersonBase.BODY_B, PersonTop.TSHIRT, PersonHeld.PARASOL), 0.001f)
-        assertEquals(0.2415f, PersonAnchors.variantPoke(
+        assertEquals(0f, PersonAnchors.variantPoke(
             PersonBase.BODY_A, PersonTop.SHIRT, PersonHeld.PARASOL), 0.001f)
-        assertTrue(PersonAnchors.variantPoke(
-            PersonBase.BODY_B, PersonTop.TSHIRT, PersonHeld.UCHIWA) < 0.01f)
-        assertTrue(PersonAnchors.variantPoke(
-            PersonBase.BODY_A, PersonTop.SHIRT, PersonHeld.UCHIWA) < 0.01f)
+        assertEquals(0f, PersonAnchors.variantPoke(
+            PersonBase.BODY_B, PersonTop.TSHIRT, PersonHeld.UCHIWA), 0.001f)
     }
 
     // ---- v0.1.26: arm layers + umbrella variants ----
 
     @Test fun armArt_followsSleeveGroups() {
-        // Polo group (ranks 0–1) has all four items; the cardigan
+        // Polo group (ranks 0–1) has both umbrellas and the
+        // parasol (the fan left the arm route in v0.1.30); the cardigan
         // group (ranks 2–3) and the knit coat (rank 4) have the
         // two umbrellas; anything else falls back to the old
         // grip-point drawing (null).
@@ -480,7 +478,9 @@ class PersonFigureTest {
             assertEquals(PersonArt.ARM_POLO_OPEN, PersonAnchors.armArt(top, PersonHeld.OPEN))
             assertEquals(PersonArt.ARM_POLO_FOLDING, PersonAnchors.armArt(top, PersonHeld.FOLDED))
             assertEquals(PersonArt.ARM_POLO_PARASOL, PersonAnchors.armArt(top, PersonHeld.PARASOL))
-            assertEquals(PersonArt.ARM_POLO_UCHIWA, PersonAnchors.armArt(top, PersonHeld.UCHIWA))
+            // v0.1.30: no arm layer serves the fan on any top —
+            // the standalone prop + hand patch carries it.
+            assertEquals(null, PersonAnchors.armArt(top, PersonHeld.UCHIWA))
         }
         for (top in listOf(PersonTop.CARDIGAN, PersonTop.LIGHT_OUTER)) {
             assertEquals(PersonArt.ARM_CARDIGAN_OPEN, PersonAnchors.armArt(top, PersonHeld.OPEN))
@@ -510,12 +510,13 @@ class PersonFigureTest {
             assertEquals(null, PersonAnchors.variantArt(PersonBase.RANK5_PORTRAIT, null, held))
             assertEquals(null, PersonAnchors.variantArt(PersonBase.RAINCOAT, null, held))
         }
-        // v0.1.29: the two summer layered bases swap whole on a
-        // parasol / fan day — and only in their summer tops.
-        assertEquals(PersonArt.FIG_RANK0_PARASOL, PersonAnchors.variantArt(PersonBase.BODY_B, PersonTop.TSHIRT, PersonHeld.PARASOL))
-        assertEquals(PersonArt.FIG_RANK0_UCHIWA, PersonAnchors.variantArt(PersonBase.BODY_B, PersonTop.TSHIRT, PersonHeld.UCHIWA))
-        assertEquals(PersonArt.FIG_RANK1_PARASOL, PersonAnchors.variantArt(PersonBase.BODY_A, PersonTop.SHIRT, PersonHeld.PARASOL))
-        assertEquals(PersonArt.FIG_RANK1_UCHIWA, PersonAnchors.variantArt(PersonBase.BODY_A, PersonTop.SHIRT, PersonHeld.UCHIWA))
+        // v0.1.30: the two summer layered bases no longer swap —
+        // the v0.1.29 parasol / fan portraits are retired (the
+        // arm layer and the prop + patch serve instead).
+        assertEquals(null, PersonAnchors.variantArt(PersonBase.BODY_B, PersonTop.TSHIRT, PersonHeld.PARASOL))
+        assertEquals(null, PersonAnchors.variantArt(PersonBase.BODY_B, PersonTop.TSHIRT, PersonHeld.UCHIWA))
+        assertEquals(null, PersonAnchors.variantArt(PersonBase.BODY_A, PersonTop.SHIRT, PersonHeld.PARASOL))
+        assertEquals(null, PersonAnchors.variantArt(PersonBase.BODY_A, PersonTop.SHIRT, PersonHeld.UCHIWA))
         assertEquals(null, PersonAnchors.variantArt(PersonBase.BODY_B, PersonTop.TSHIRT, PersonHeld.OPEN))
         assertEquals(null, PersonAnchors.variantArt(PersonBase.BODY_B, PersonTop.CARDIGAN, PersonHeld.PARASOL))
         assertEquals(null, PersonAnchors.variantArt(PersonBase.BODY_A, PersonTop.TSHIRT, PersonHeld.PARASOL))
@@ -567,11 +568,12 @@ class PersonFigureTest {
         assertEquals(626 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_OPEN))
         assertEquals(283 to 1024, PersonAnchors.armPx(PersonArt.ARM_CARDIGAN_FOLDING))
         assertEquals(282 to 1024, PersonAnchors.armPx(PersonArt.ARM_KNITCOAT_FOLDING))
-        // v0.1.28: both polo pictures were redrawn from the
-        // app's own summer composite (tools/audit28/) — new
-        // frames, re-measured anchors.
+        // v0.1.30: the parasol picture is the rain umbrella's
+        // own frame (626×1024) with only its canopy repainted.
+        // The v0.1.28 fan picture keeps its frame as a record —
+        // its arm layer is retired (the prop + patch serves).
         assertEquals(379 to 487, PersonAnchors.armPx(PersonArt.ARM_POLO_UCHIWA))
-        assertEquals(789 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_PARASOL))
+        assertEquals(626 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_PARASOL))
     }
 
     @Test fun v0127_auditFixNumbers_stayPinned() {
@@ -585,26 +587,37 @@ class PersonFigureTest {
         assertEquals(0.64f, PersonCanvas.topCal(PersonTop.TSHIRT)[0], 0.001f)
     }
 
-    @Test fun v0128_armRedrawNumbers_stayPinned() {
-        // The v0.1.28 arm redraw (tools/audit28/): both polo
-        // pictures regenerated from the app's own composite so
-        // the arm hangs from the shoulder. The parasol stands
-        // its shaft on the hand like the open umbrellas; the
-        // fan hangs unrotated (the v0.1.27 picture needed −16°
-        // because its arm grew up out of the fist).
-        val parasol = PersonAnchors.armAnchor(PersonArt.ARM_POLO_PARASOL)
-        assertEquals(0.598f, parasol.gripX, 0.001f)
-        assertEquals(0.909f, parasol.gripY, 0.001f)
-        assertEquals(0.598f, parasol.shaftX ?: -1f, 0.001f)
-        assertEquals(1.578f, parasol.dwFrac ?: -1f, 0.001f)
-        assertEquals(0.815f, parasol.dhFrac, 0.001f)
-        assertEquals(0f, parasol.rotDeg, 0.001f)
-        val uchiwa = PersonAnchors.armAnchor(PersonArt.ARM_POLO_UCHIWA)
-        assertEquals(0.235f, uchiwa.gripX, 0.001f)
-        assertEquals(0.842f, uchiwa.gripY, 0.001f)
-        assertEquals(0.690f, uchiwa.dwFrac ?: -1f, 0.001f)
-        assertEquals(0.351f, uchiwa.dhFrac, 0.001f)
-        assertEquals(0f, uchiwa.rotDeg, 0.001f)
+    @Test fun v0130_parasolAndFanNumbers_stayPinned() {
+        // The v0.1.30 settlement (tools/audit30/): the parasol
+        // picture IS the approved rain umbrella arm layer with
+        // only its canopy repainted in the parasol family's
+        // colours, so its anchor equals the open umbrella's,
+        // value for value.
+        assertEquals(
+            PersonAnchors.armAnchor(PersonArt.ARM_POLO_OPEN),
+            PersonAnchors.armAnchor(PersonArt.ARM_POLO_PARASOL)
+        )
+        // The fan's solved placement (tools/audit30/solve_uchiwa*):
+        // height 0.20, the grip riding 0.04 bw outward of the rig
+        // hand, rotated −60° (PIL sense) about the grip; the hand
+        // patches serve the two summer bases on their cut rects.
+        assertEquals(0.20f, PersonAnchors.UCHIWA_H, 0.001f)
+        assertEquals(-60f, PersonAnchors.UCHIWA_ROT_DEG, 0.001f)
+        assertEquals(0.04f, PersonAnchors.UCHIWA_DX, 0.001f)
+        assertEquals(PersonArt.PATCH_HAND_B, PersonAnchors.handPatch(PersonBase.BODY_B))
+        assertEquals(PersonArt.PATCH_HAND_A, PersonAnchors.handPatch(PersonBase.BODY_A))
+        assertEquals(null, PersonAnchors.handPatch(PersonBase.BODY_C))
+        assertEquals(null, PersonAnchors.handPatch(PersonBase.RAINCOAT))
+        val rb = PersonAnchors.handPatchRect(PersonBase.BODY_B)!!
+        assertEquals(0.685f, rb[0], 0.001f)
+        assertEquals(0.575f, rb[1], 0.001f)
+        assertEquals(0.800f, rb[2], 0.001f)
+        assertEquals(0.670f, rb[3], 0.001f)
+        val ra = PersonAnchors.handPatchRect(PersonBase.BODY_A)!!
+        assertEquals(0.685f, ra[0], 0.001f)
+        assertEquals(0.575f, ra[1], 0.001f)
+        assertEquals(0.800f, ra[2], 0.001f)
+        assertEquals(0.680f, ra[3], 0.001f)
     }
 
     @Test fun variantInner_staysSane() {

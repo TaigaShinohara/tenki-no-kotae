@@ -177,6 +177,10 @@ enum class PersonArt {
     PROP_MASK, PROP_SUNGLASSES, PROP_MUFFLER,
     PROP_MITTEN_L, PROP_MITTEN_R, PROP_TOWEL, PROP_PARASOL, PROP_UCHIWA,
     PROP_FOLDING,
+    // v0.1.30: hand patches — crops of the summer bodies around
+    // the right hand (the top's coverage masked out), pasted over
+    // the fan's handle so the fist closes over the grip.
+    PATCH_HAND_A, PATCH_HAND_B,
     // v0.1.26: sleeve-group arm layers (sleeve + arm + item in one
     // picture) and the umbrella variants of the portrait bases.
     ARM_POLO_OPEN, ARM_POLO_FOLDING, ARM_POLO_PARASOL, ARM_POLO_UCHIWA,
@@ -396,18 +400,20 @@ object PersonFigure {
      * left is the FALLBACK parasol's 0.34 (the standing rule since
      * v0.1.19): the old floating asset rides well above the head,
      * but only where no arm-layer parasol serves — the polo group's
-     * arm parasol is grip-anchored at the person top and needs no
-     * room of its own. [PersonComposer] shrinks the person into
+     * arm parasol (v0.1.30: the rain umbrella's own picture with a
+     * repainted canopy) pads by its measured poke instead, like
+     * the open umbrella. [PersonComposer] shrinks the person into
      * the given rect by this much; callers sizing a view for a
      * known person height multiply by (1 + padTopRatio).
      */
     fun padTopRatio(spec: PersonSpec): Float {
         var pad = 0f
-        // A whole-picture variant owns the held item outright
-        // (v0.1.29): its poke is the only held-item contribution —
-        // the arm layer it suppresses must not add its own poke,
-        // and the fallback parasol's flat 0.34 must not fire
-        // under a parasol portrait.
+        // A whole-picture variant owns the held item outright:
+        // its poke is the only held-item contribution — the arm
+        // layer it suppresses must not add its own poke, and the
+        // fallback parasol's flat 0.34 must not fire under a
+        // portrait. (Since v0.1.30 only the umbrella variants of
+        // the portrait / raincoat bases remain.)
         val variant = PersonAnchors.variantArt(spec.base, spec.top, spec.held)
         if (variant != null) {
             val vPoke = PersonAnchors.variantPoke(spec.base, spec.top, spec.held)
@@ -976,15 +982,59 @@ object PersonAnchors {
 
     /** Fan: height / body height, placed by its grip point
      * (v0.1.22): the handle's middle — measured at (0.502, 0.90) of
-     * the asset; the handle spans y 0.79–1.00 at x ≈ 0.50 — lands
-     * exactly on the hand, so the disc rides above the hand and the
-     * handle runs into it. The older center-offset placement (even
-     * after v0.1.21 narrowed it to 0.05) still left the handle a
-     * full hand-width right of the hand, and the whole fan floated
-     * off the body's right side. */
-    const val UCHIWA_H = 0.21f
+     * the asset; the handle spans y 0.79–1.00 at x ≈ 0.50.
+     *
+     * v0.1.30 placement (solved numerically in tools/audit30/):
+     * the grip point rides [UCHIWA_DX] body widths OUTWARD of the
+     * rig hand (still over the fist — the hand patch covers the
+     * join) and the picture is rotated about the grip by
+     * [UCHIWA_ROT_DEG], so the disc stands outside the fist,
+     * clear of the torso front, the head zone and the neck towel
+     * on both summer bases. A grip-anchored disc cannot both sit
+     * directly above the fist and clear the torso (the disc's
+     * radius exceeds the hand-to-silhouette gap — the proof is
+     * in docs/FEATURE_v0.1.30.md), so the disc settles beside the
+     * fist at its height, tilted like a fan at rest. The one
+     * graze left is on rank 1: ~0.02 bw of the disc's rim crosses
+     * the holding arm's own outline, in front of the arm — the
+     * natural reading for a held fan. */
+    const val UCHIWA_H = 0.20f
     const val UCHIWA_GRIP_X = 0.502f
     const val UCHIWA_GRIP_Y = 0.90f
+
+    /** Fan rotation about the grip, in the PIL sense the audit
+     * solver works in (counter-clockwise positive); the composer
+     * negates it for Canvas, exactly as with the arm layers'
+     * [ArmAnchor.rotDeg]. */
+    const val UCHIWA_ROT_DEG = -60f
+
+    /** How far the fan's grip point rides outward of the rig
+     * hand, in body widths (the fist spans ≈0.70–0.79 of the
+     * body width on both summer bases, so 0.04 stays on it). */
+    const val UCHIWA_DX = 0.04f
+
+    /** The hand patch serving a base on a fan day, or null where
+     * no patch was cut (the fan then stands on the grip alone).
+     * The patches are crops of the base bodies themselves around
+     * the right hand, alpha-masked to where the day's top does
+     * not cover the body (tools/audit30/make_patches.py), so
+     * pasting one repaints only pixels the composite already
+     * shows — plus the fist over the fan's handle. */
+    fun handPatch(base: PersonBase): PersonArt? = when (base) {
+        PersonBase.BODY_B -> PersonArt.PATCH_HAND_B
+        PersonBase.BODY_A -> PersonArt.PATCH_HAND_A
+        else -> null
+    }
+
+    /** Where a hand patch lands: (x0, y0, x1, y1) in person-rect
+     * fractions — the crop's own fractions of the body bitmap,
+     * which the composer draws onto the person rect, so bitmap
+     * fractions ARE person fractions here. */
+    fun handPatchRect(base: PersonBase): FloatArray? = when (base) {
+        PersonBase.BODY_B -> floatArrayOf(0.685f, 0.575f, 0.800f, 0.670f)
+        PersonBase.BODY_A -> floatArrayOf(0.685f, 0.575f, 0.800f, 0.680f)
+        else -> null
+    }
 
     /** Code-drawn signs: sweat drops beside the head (x positions /
      * body width, their center height, radius / body height), and
@@ -1039,7 +1089,7 @@ object PersonAnchors {
     fun armPx(art: PersonArt): Pair<Int, Int> = when (art) {
         PersonArt.ARM_POLO_OPEN -> 626 to 1024
         PersonArt.ARM_POLO_FOLDING -> 290 to 1024
-        PersonArt.ARM_POLO_PARASOL -> 789 to 1024
+        PersonArt.ARM_POLO_PARASOL -> 626 to 1024
         PersonArt.ARM_POLO_UCHIWA -> 379 to 487
         PersonArt.ARM_CARDIGAN_OPEN -> 626 to 1024
         PersonArt.ARM_CARDIGAN_FOLDING -> 283 to 1024
@@ -1058,20 +1108,18 @@ object PersonAnchors {
             ArmAnchor(0.83f, 0.84f, 0.815f, 1.20f, 0.95f, 0f)
         PersonArt.ARM_POLO_FOLDING ->
             ArmAnchor(0.40f, 0.40f, null, null, 0.70f, 12f)
-        // v0.1.28: both pictures were redrawn by edit-generating
-        // the app's own summer composite (tools/audit28/): the arm
-        // now hangs from the shoulder — polo sleeve, bare forearm,
-        // fist at hip height. The v0.1.27 parasol (a program-drawn
-        // sleeve capsule floating at head height, the arm a
-        // straight stick below it) and the v0.1.27 fan (the arm
-        // growing UP out of the fist, the sleeve cap at head
-        // height) are gone. The parasol anchors on its shaft like
-        // the open umbrellas; the fan's grip is declared a touch
-        // left of its fist's centre so the sleeve lands on the
-        // polo's sleeve zone (measured in the mirror trials,
-        // tools/audit28/trial_arms28.py).
+        // v0.1.30: the parasol picture is the APPROVED rain
+        // umbrella arm layer itself with only its canopy
+        // repainted in the parasol family's colours
+        // (tools/audit30/make_parasol_layer.py — the change mask
+        // is bounded by the canopy's own scalloped edge; arm,
+        // sleeve, shaft and fist pixels are the umbrella's,
+        // untouched). Same frame, same geometry, so it takes the
+        // open umbrella's anchor verbatim. The v0.1.28 redraw
+        // (edit-generated from the app's composite; its canopy
+        // sat off-centre) is retired.
         PersonArt.ARM_POLO_PARASOL ->
-            ArmAnchor(0.598f, 0.909f, 0.598f, 1.578f, 0.815f, 0f)
+            ArmAnchor(0.83f, 0.84f, 0.815f, 1.20f, 0.95f, 0f)
         PersonArt.ARM_POLO_UCHIWA ->
             ArmAnchor(0.235f, 0.842f, null, 0.690f, 0.351f, 0f)
         PersonArt.ARM_CARDIGAN_OPEN ->
@@ -1092,10 +1140,10 @@ object PersonAnchors {
      * grouping): the polo group serves the short-sleeve tops
      * (ranks 0–1: TSHIRT and SHIRT), the cardigan group the thin
      * long sleeves (ranks 2–3: CARDIGAN and LIGHT_OUTER), and the
-     * knit coat is rank 4's own. The parasol and the fan exist
-     * only in the polo group — the auto rules only ever raise
-     * them on the hottest days; any other top asking for them
-     * (the test screen can) takes the fallback.
+     * knit coat is rank 4's own. The parasol exists only in the
+     * polo group, and the fan in none (v0.1.30) — the auto rules
+     * only ever raise them on the hottest days; any other top
+     * asking for them (the test screen can) takes the fallback.
      */
     fun armArt(top: PersonTop?, held: PersonHeld): PersonArt? {
         val polo = top == PersonTop.TSHIRT || top == PersonTop.SHIRT
@@ -1116,8 +1164,11 @@ object PersonAnchors {
             }
             PersonHeld.PARASOL ->
                 if (polo) PersonArt.ARM_POLO_PARASOL else null
-            PersonHeld.UCHIWA ->
-                if (polo) PersonArt.ARM_POLO_UCHIWA else null
+            // v0.1.30: no arm layer serves the fan on any top —
+            // the standalone prop + hand patch (the composer's
+            // held slot) carries it; the v0.1.28 polo fan picture
+            // is retired (its arm never sat true either).
+            PersonHeld.UCHIWA -> null
             PersonHeld.NONE -> null
         }
     }
@@ -1176,13 +1227,14 @@ object PersonAnchors {
      * swapped whole for the generated picture that already holds
      * the item, and no held item or arm layer is drawn over it.
      * The portrait / raincoat bases swap on an OPEN or FOLDED
-     * (umbrella) day; since v0.1.29 the two summer layered bases
-     * swap on a PARASOL or UCHIWA day — the polo arm layers for
-     * those two items never sat true on the body (the user's
-     * on-device checks in v0.1.26–28), so the parasol and the fan
-     * now arrive as one picture with the arm already in place,
-     * the way the umbrellas always did. Every other layered
-     * combo keeps its arm layer (or the grip fallback).
+     * (umbrella) day. The two summer layered bases did the same
+     * on a PARASOL / UCHIWA day in v0.1.29, but the portraits
+     * redrew the figure a few percent off its base and the user
+     * still read them as off; v0.1.30 retired those four
+     * pictures (the FIG_RANK0/1_* arts stay as records) and put
+     * the parasol back on its arm layer and the fan on the
+     * standalone prop + hand patch. Every other layered combo
+     * keeps its arm layer (or the grip fallback).
      */
     fun variantArt(
         base: PersonBase, top: PersonTop?, held: PersonHeld
@@ -1202,22 +1254,11 @@ object PersonAnchors {
             PersonHeld.FOLDED -> PersonArt.FIG_RAINCOAT_FOLDING
             else -> null
         }
-        PersonBase.BODY_B -> when {
-            top == PersonTop.TSHIRT -> when (held) {
-                PersonHeld.PARASOL -> PersonArt.FIG_RANK0_PARASOL
-                PersonHeld.UCHIWA -> PersonArt.FIG_RANK0_UCHIWA
-                else -> null
-            }
-            else -> null
-        }
-        PersonBase.BODY_A -> when {
-            top == PersonTop.SHIRT -> when (held) {
-                PersonHeld.PARASOL -> PersonArt.FIG_RANK1_PARASOL
-                PersonHeld.UCHIWA -> PersonArt.FIG_RANK1_UCHIWA
-                else -> null
-            }
-            else -> null
-        }
+        // v0.1.30: the summer layered bases no longer swap — the
+        // v0.1.29 parasol / fan portraits redrew the whole figure
+        // a few percent off the base (the user's on-device check:
+        // 「微妙」), so the parasol went back to its arm layer
+        // and the fan to the standalone prop + hand patch.
         else -> null
     }
 
@@ -1351,6 +1392,8 @@ object PersonComposer {
         PersonArt.PROP_PARASOL -> R.drawable.prop_parasol
         PersonArt.PROP_UCHIWA -> R.drawable.prop_uchiwa
         PersonArt.PROP_FOLDING -> R.drawable.prop_folding
+        PersonArt.PATCH_HAND_A -> R.drawable.patch_hand_a
+        PersonArt.PATCH_HAND_B -> R.drawable.patch_hand_b
         PersonArt.ARM_POLO_OPEN -> R.drawable.arm_polo_umbrella_open
         PersonArt.ARM_POLO_FOLDING -> R.drawable.arm_polo_umbrella_folding
         PersonArt.ARM_POLO_PARASOL -> R.drawable.arm_polo_parasol
@@ -1468,9 +1511,8 @@ object PersonComposer {
         //      and the held slot below keeps the v0.1.22
         //      grip-point drawing as the fallback. A whole-picture
         //      variant suppresses the arm layer: the portrait
-        //      already wears its arm holding the item (v0.1.29 —
-        //      before, the polo parasol / fan arm would have been
-        //      drawn over the new portraits) ----
+        //      already wears its arm holding the item (since
+        //      v0.1.30 only the umbrella variants remain) ----
         val arm = if (variant == null) {
             PersonAnchors.armArt(spec.top, spec.held)
         } else {
@@ -1689,11 +1731,46 @@ object PersonComposer {
                 val img = bmp(ctx, PersonArt.PROP_UCHIWA)
                 val fh = PersonAnchors.UCHIWA_H * ph
                 val fw = fh * img.width / img.height
-                val (fLeft, fTop) = PersonAnchors.gripOrigin(
-                    PersonAnchors.UCHIWA_GRIP_X, PersonAnchors.UCHIWA_GRIP_Y,
-                    fw, fh, handX, handY
-                ).let { it[0] to it[1] }
-                canvas.drawBitmap(img, null, RectF(fLeft, fTop, fLeft + fw, fTop + fh), paint)
+                // v0.1.30: the solved placement — the grip point
+                // rides UCHIWA_DX body widths outward of the rig
+                // hand and the picture is rotated about the grip
+                // (the solver's PIL angle, negated for Canvas as
+                // with the arm layers), so the disc stands outside
+                // the fist, clear of the torso front.
+                val gx = handX + PersonAnchors.UCHIWA_DX * bw
+                val gy = handY
+                val gX = PersonAnchors.UCHIWA_GRIP_X * fw
+                val gY = PersonAnchors.UCHIWA_GRIP_Y * fh
+                if (PersonAnchors.UCHIWA_ROT_DEG != 0f) {
+                    canvas.save()
+                    canvas.translate(gx, gy)
+                    canvas.rotate(-PersonAnchors.UCHIWA_ROT_DEG)
+                    canvas.drawBitmap(
+                        img, null,
+                        RectF(-gX, -gY, -gX + fw, -gY + fh), paint
+                    )
+                    canvas.restore()
+                } else {
+                    canvas.drawBitmap(
+                        img, null,
+                        RectF(gx - gX, gy - gY, gx - gX + fw, gy - gY + fh),
+                        paint
+                    )
+                }
+                // The base's own hand patch over the join: the
+                // fist closes over the handle (v0.1.30).
+                val patchArt = PersonAnchors.handPatch(spec.base)
+                val patchRect = PersonAnchors.handPatchRect(spec.base)
+                if (patchArt != null && patchRect != null) {
+                    canvas.drawBitmap(
+                        bmp(ctx, patchArt), null,
+                        RectF(
+                            bx(patchRect[0]), by(patchRect[1]),
+                            bx(patchRect[2]), by(patchRect[3])
+                        ),
+                        paint
+                    )
+                }
             }
             PersonHeld.NONE -> Unit
         }
