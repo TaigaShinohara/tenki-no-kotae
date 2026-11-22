@@ -39,6 +39,19 @@ import kotlin.math.roundToInt
  * scaled by width it runs head to toe, scaled by height the body's
  * arms spill out), with the new props laid over it.
  *
+ * v0.1.22 (docs/FIX_v0.1.22.md) re-anchors every held prop on its
+ * GRIP point — the fan, the folded umbrella, the open umbrella and
+ * the parasol now place the handle itself on the hand instead of
+ * offsetting the part's centre — and re-measures BODY_A's hands,
+ * which sat mid-forearm (0.582 of the height) instead of at the arm's
+ * end (0.638), dragging every hand-anchored part on ranks 1–4 up
+ * with them. The same pass puts a neck calibration on EVERY top:
+ * collars used to ride up to the chin (the polo's collar tips touched
+ * the jaw and the light coat covered the mouth); each topCal now
+ * lands its collar at the neck base, verified on 3× zoom crops of
+ * the neckline for all six tops. The sweat drops move up and inward
+ * onto the hair (they hung beside the cheeks like earrings).
+ *
  * v0.1.21 (docs/FIX_v0.1.21.md) extends the hybrid call to rank 6:
  * the down top is a closed-collar product shot with no face opening
  * at all, so laid over the wide body it swallowed the whole face —
@@ -416,11 +429,24 @@ object PersonCanvas {
         PersonTop.DOWN -> PersonArt.TOP_DOWN
     }
 
-    /** Per-top calibration (scaleX, scaleY, dx, dy); dx/dy in body fractions. */
+    /** Per-top calibration (scaleX, scaleY, dx, dy); dx/dy in body
+     * fractions. Since v0.1.22 EVERY top carries one, solved so the
+     * top's collar lands on the neck base of its body (drawn collar
+     * top ≈ 0.33 of the body height; the neck itself spans
+     * 0.298–0.337): the product-shot tops ride high — the polo's
+     * collar tips touched the jaw, the shirt's collar sat at the
+     * chin, the light coat's collar peaks covered the mouth. The
+     * cardigan was already right and keeps its v0.1.19 values. The
+     * vertical squeeze absorbs part of each shift so the hems stay
+     * near their worn length. Verified on 3× neckline crops
+     * (tools/audit22/) and pinned by a unit test. */
     fun topCal(top: PersonTop): FloatArray = when (top) {
+        PersonTop.TSHIRT -> floatArrayOf(1.0f, 0.91f, 0f, 0.047f)
+        PersonTop.SHIRT -> floatArrayOf(1.0f, 0.90f, 0f, 0.044f)
         PersonTop.CARDIGAN -> floatArrayOf(0.82f, 0.55f, 0f, 0.05f)
-        PersonTop.KNIT_COAT -> floatArrayOf(1.0f, 0.83f, 0f, 0.04f)
-        else -> floatArrayOf(1f, 1f, 0f, 0f)
+        PersonTop.LIGHT_OUTER -> floatArrayOf(1.0f, 0.87f, 0f, 0.075f)
+        PersonTop.KNIT_COAT -> floatArrayOf(1.0f, 0.78f, 0f, 0.079f)
+        PersonTop.DOWN -> floatArrayOf(1.0f, 0.85f, 0f, 0.090f)
     }
 }
 
@@ -453,9 +479,11 @@ data class PersonRig(
 
 object PersonRigs {
     fun rig(base: PersonBase): PersonRig = when (base) {
+        // BODY_A's hands were re-measured in v0.1.22: the old y
+        // (0.582) sat mid-forearm; the hands end at 0.638 / 0.637.
         PersonBase.BODY_A -> PersonRig(
             0.502f, 0.180f, 0.399f, 0.248f, 0.747f,
-            0.753f, 0.582f, 0.243f, 0.581f,
+            0.754f, 0.638f, 0.241f, 0.637f,
             0.216f, 0.260f
         )
         PersonBase.BODY_B -> PersonRig(
@@ -513,17 +541,17 @@ object PersonAnchors {
     /** Open umbrella: width / person width; canopy top at this
      * fraction of the person height. The asset is canopy + a shaft
      * stub: the rest of the shaft is a drawn line in [SHAFT_COLOR]
-     * from the stub's end to the hand. */
+     * from the stub's end to the hand. Since v0.1.22 the canopy is
+     * stood on the hand — the shaft's x IS the right hand's x — so
+     * the drawn shaft runs straight down into the hand; until then
+     * the shaft stood at a fixed 0.68 of the width and the line
+     * kinked diagonally to reach hands that stand elsewhere (on
+     * BODY_C the kink was about 15°). */
     const val UMB_WIDTH = 1.12f
     const val UMB_TOP = 0.005f
 
     /** Shaft center inside the umbrella asset (fraction of its width). */
     const val UMB_SHAFT_X = 0.507f
-
-    /** Where the shaft stands, as a fraction of the person width —
-     * right of center, so the drawn shaft runs down the body's right
-     * side to the hand instead of slashing across the torso. */
-    const val UMB_SHAFT_AT = 0.68f
 
     /** Drawn shaft width / umbrella width, and its color (sampled
      * from the asset's own shaft: RGB (0, 27, 68) as an ARGB int —
@@ -570,11 +598,14 @@ object PersonAnchors {
     const val MITTEN_H = 0.115f
     const val MITTEN_HAND_AT = 0.42f
 
-    /** The new folded umbrella: height / body height; its center
-     * offset right of the hand; its bottom this far below the hand. */
+    /** The new folded umbrella: height / body height, placed by its
+     * grip point (v0.1.22): the grip — the straight of the handle
+     * just above the J-hook, measured at (0.52, 0.90) of the asset —
+     * lands exactly on the hand. Until then the part was offset from
+     * its center and hung beside the hand. */
     const val FOLD2_H = 0.30f
-    const val FOLD2_DX = 0.10f
-    const val FOLD2_BOTTOM_DY = 0.05f
+    const val FOLD2_GRIP_X = 0.52f
+    const val FOLD2_GRIP_Y = 0.90f
 
     /** Parasol: width / body width; its top (above the person — the
      * pad in [PersonFigure.padTopRatio] makes the room); the shaft
@@ -596,21 +627,28 @@ object PersonAnchors {
     const val PARASOL_SHAFT_COLOR: Int = 0xFF97C9EA.toInt()
     const val PARASOL_SHAFT_EDGE: Int = 0xFF1B2566.toInt()
 
-    /** Fan: height / body height; its center offset right of the
-     * hand (0.05 since v0.1.21 — at 0.12 the handle, which sits at
-     * the asset's center, hung beside the hand instead of in it);
-     * its bottom (the handle's end) this far below the hand. */
+    /** Fan: height / body height, placed by its grip point
+     * (v0.1.22): the handle's middle — measured at (0.502, 0.90) of
+     * the asset; the handle spans y 0.79–1.00 at x ≈ 0.50 — lands
+     * exactly on the hand, so the disc rides above the hand and the
+     * handle runs into it. The older center-offset placement (even
+     * after v0.1.21 narrowed it to 0.05) still left the handle a
+     * full hand-width right of the hand, and the whole fan floated
+     * off the body's right side. */
     const val UCHIWA_H = 0.21f
-    const val UCHIWA_DX = 0.05f
-    const val UCHIWA_BOTTOM_DY = 0.03f
+    const val UCHIWA_GRIP_X = 0.502f
+    const val UCHIWA_GRIP_Y = 0.90f
 
     /** Code-drawn signs: sweat drops beside the head (x positions /
      * body width, their center height, radius / body height), and
      * the shiver zigzags at the torso sides. Colors are literals so
-     * this object stays Android-free. */
-    const val SWEAT_X1 = 0.16f
-    const val SWEAT_X2 = 0.86f
-    const val SWEAT_Y = 0.30f
+     * this object stays Android-free. The drops moved up and inward
+     * in v0.1.22 (0.16/0.86 at y 0.30 → 0.19/0.83 at y 0.27): they
+     * hung off the hair's lower corners beside the cheeks like
+     * earrings; now they sit on the hair at the face's sides. */
+    const val SWEAT_X1 = 0.19f
+    const val SWEAT_X2 = 0.83f
+    const val SWEAT_Y = 0.27f
     const val SWEAT_R = 0.022f
     const val SWEAT_COLOR: Int = 0xFFA8D8F0.toInt()
     const val SHIVER_X1 = 0.045f
@@ -634,6 +672,18 @@ object PersonAnchors {
         PersonGarment.COAT_SCARF -> 0.756f to 0.629f
         PersonGarment.DOWN_GLOVES -> 0.90f to 0.66f
     }
+
+    /** Grip-point placement (v0.1.22): the (left, top) a prop rect
+     * of size (propW × propH) must take so that the prop's grip
+     * point — (gripX, gripY) as fractions of the prop — lands
+     * exactly on the hand at (handX, handY). All four held props
+     * are placed this way (the two umbrellas' shafts stand on the
+     * hand directly; the fan and the folded umbrella go through
+     * this). Pure math, unit-tested. */
+    fun gripOrigin(
+        gripX: Float, gripY: Float, propW: Float, propH: Float,
+        handX: Float, handY: Float
+    ): FloatArray = floatArrayOf(handX - gripX * propW, handY - gripY * propH)
 }
 
 /**
@@ -866,8 +916,9 @@ object PersonComposer {
                 val umb = bmp(ctx, PersonArt.UMBRELLA_OPEN)
                 val uw = PersonAnchors.UMB_WIDTH * bw
                 val uh = uw * umb.height / umb.width
-                val uLeft = bl + PersonAnchors.UMB_SHAFT_AT * bw -
-                    PersonAnchors.UMB_SHAFT_X * uw
+                // The shaft stands on the hand (v0.1.22): its x IS
+                // handX, so the extension below runs straight down.
+                val uLeft = handX - PersonAnchors.UMB_SHAFT_X * uw
                 val uTop = pt + PersonAnchors.UMB_TOP * ph
                 // The shaft extension first: the asset's stub is drawn
                 // over its top, so the join hides under the canopy.
@@ -886,8 +937,10 @@ object PersonComposer {
                 val fold = bmp(ctx, PersonArt.PROP_FOLDING)
                 val fh = PersonAnchors.FOLD2_H * ph
                 val fw = fh * fold.width / fold.height
-                val fLeft = handX + PersonAnchors.FOLD2_DX * bw - fw / 2f
-                val fTop = handY + PersonAnchors.FOLD2_BOTTOM_DY * ph - fh
+                val (fLeft, fTop) = PersonAnchors.gripOrigin(
+                    PersonAnchors.FOLD2_GRIP_X, PersonAnchors.FOLD2_GRIP_Y,
+                    fw, fh, handX, handY
+                ).let { it[0] to it[1] }
                 canvas.drawBitmap(fold, null, RectF(fLeft, fTop, fLeft + fw, fTop + fh), paint)
             }
             PersonHeld.PARASOL -> {
@@ -918,8 +971,10 @@ object PersonComposer {
                 val img = bmp(ctx, PersonArt.PROP_UCHIWA)
                 val fh = PersonAnchors.UCHIWA_H * ph
                 val fw = fh * img.width / img.height
-                val fLeft = handX + PersonAnchors.UCHIWA_DX * bw - fw / 2f
-                val fTop = handY + PersonAnchors.UCHIWA_BOTTOM_DY * ph - fh
+                val (fLeft, fTop) = PersonAnchors.gripOrigin(
+                    PersonAnchors.UCHIWA_GRIP_X, PersonAnchors.UCHIWA_GRIP_Y,
+                    fw, fh, handX, handY
+                ).let { it[0] to it[1] }
                 canvas.drawBitmap(img, null, RectF(fLeft, fTop, fLeft + fw, fTop + fh), paint)
             }
             PersonHeld.NONE -> Unit

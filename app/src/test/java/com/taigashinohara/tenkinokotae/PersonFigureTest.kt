@@ -187,7 +187,7 @@ class PersonFigureTest {
         }
         assertTrue(PersonAnchors.HEAD_CX in 0f..1f)
         assertTrue(PersonAnchors.HAT_BOTTOM in 0f..1f)
-        assertTrue(PersonAnchors.UMB_SHAFT_AT in 0f..1f)
+        assertTrue(PersonAnchors.UMB_SHAFT_X in 0f..1f)
     }
 
     // ---- v0.1.19: the layered outfit ----
@@ -474,5 +474,84 @@ class PersonFigureTest {
             assertTrue("$art box", b[0] >= 0f && b[1] >= 0f && b[2] <= 1f && b[3] <= 1f)
             assertTrue("$art box", b[0] < b[2] && b[1] < b[3])
         }
+    }
+
+    // ---- v0.1.22: grip-point anchoring and neck calibration ----
+
+    @Test fun rigHands_sitAtTheArmEnds() {
+        // Every base's hands were measured at the arm ends, in the
+        // 0.60–0.66 band of the body height. BODY_A's rig sat at
+        // 0.582 (mid-forearm) until v0.1.22, which dragged every
+        // hand-anchored part on ranks 1–4 up off the hand.
+        for (base in PersonBase.values()) {
+            val rig = PersonRigs.rig(base)
+            assertTrue("$base right hand ${rig.handRy}", rig.handRy in 0.60f..0.66f)
+            assertTrue("$base left hand ${rig.handLy}", rig.handLy in 0.60f..0.66f)
+        }
+    }
+
+    @Test fun gripPlacement_putsTheGripExactlyOnTheHand() {
+        // The composer places the fan and the folded umbrella
+        // through gripOrigin: the prop's grip point must come out
+        // exactly on the rig hand, on every base.
+        val grips = listOf(
+            PersonAnchors.UCHIWA_GRIP_X to PersonAnchors.UCHIWA_GRIP_Y,
+            PersonAnchors.FOLD2_GRIP_X to PersonAnchors.FOLD2_GRIP_Y
+        )
+        for (base in PersonBase.values()) {
+            val rig = PersonRigs.rig(base)
+            for ((gx, gy) in grips) {
+                val (l, t) = PersonAnchors.gripOrigin(gx, gy, 37f, 210f, rig.handRx, rig.handRy)
+                    .let { it[0] to it[1] }
+                assertEquals("$base grip x", rig.handRx, l + gx * 37f, 0.0001f)
+                assertEquals("$base grip y", rig.handRy, t + gy * 210f, 0.0001f)
+            }
+        }
+    }
+
+    @Test fun gripAnchors_sitOnTheMeasuredHandles() {
+        // The fan's handle spans y 0.79–1.00 of its asset at
+        // x ≈ 0.50; the folded umbrella is gripped on the straight
+        // above its J-hook. A grip outside those spans would put
+        // the disc / the canopy body in the hand instead.
+        assertTrue(PersonAnchors.UCHIWA_GRIP_X in 0.45f..0.55f)
+        assertTrue(PersonAnchors.UCHIWA_GRIP_Y in 0.79f..1.0f)
+        assertTrue(PersonAnchors.FOLD2_GRIP_X in 0.45f..0.60f)
+        assertTrue(PersonAnchors.FOLD2_GRIP_Y in 0.85f..0.95f)
+    }
+
+    @Test fun topCollars_landAtTheNeckBase() {
+        // Each top's drawn collar top (its canvas box top, run
+        // through topCal) must land on the neck base of its body —
+        // the measured neck spans 0.298–0.337 of the body height.
+        // Until v0.1.22 the uncalibrated tops rode up to 0.20–0.27:
+        // the polo's collar tips touched the jaw and the light
+        // coat's collar peaks covered the mouth.
+        val pairs = (0..4).map { r ->
+            val (base, top) = PersonFigure.outfitFor(r, false)
+            top!! to base
+        } + (PersonTop.DOWN to PersonBase.BODY_C)
+        for ((top, base) in pairs) {
+            val tb = PersonCanvas.box(PersonCanvas.topArt(top))
+            val bb = PersonCanvas.box(PersonCanvas.bodyArt(base))
+            val bh = bb[3] - bb[1]
+            val topF = (tb[1] - bb[1]) / bh
+            val botF = (tb[3] - bb[1]) / bh
+            val cen = (topF + botF) / 2f
+            val cal = PersonCanvas.topCal(top)
+            val collar = cen + cal[3] + (topF - cen) * cal[1]
+            val hem = cen + cal[3] + (botF - cen) * cal[1]
+            assertTrue("$top collar $collar at the neck base", collar in 0.315f..0.355f)
+            assertTrue("$top hem $hem at a worn length", hem in 0.60f..0.85f)
+        }
+    }
+
+    @Test fun sweatDrops_hugTheHair() {
+        // The drops sit on the hair at the face's sides: inside the
+        // body's silhouette horizontally and above the old earring
+        // height (0.30) that hung them beside the cheeks.
+        assertTrue(PersonAnchors.SWEAT_X1 in 0.17f..0.22f)
+        assertTrue(PersonAnchors.SWEAT_X2 in 0.80f..0.85f)
+        assertTrue(PersonAnchors.SWEAT_Y < 0.30f)
     }
 }
