@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Weather data comes from the Open-Meteo public API at runtime. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:allowBackup="true"
+        android:label="天気のこたえ"
+        android:usesCleartextTraffic="false"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|uiMode"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Home-screen widget (v0.1.14). It only reads the snapshot
+             MainActivity saves (TenkiWidget.kt) and never fetches, so
+             it needs no permission of its own. RECEIVE_BOOT_COMPLETED
+             is deliberately NOT declared: the widget host rebinds
+             widgets and calls onUpdate after a reboot by itself, and
+             updatePeriodMillis covers the periodic refresh. -->
+        <receiver
+            android:name=".TenkiWidgetProvider"
+            android:exported="false"
+            android:label="天気のこたえ">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info" />
+        </receiver>
+    </application>
+</manifest>

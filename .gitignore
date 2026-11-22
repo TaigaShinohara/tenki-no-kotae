@@ -1,0 +1,18 @@
+# Secrets / local machine
+.local/
+local.properties
+*.keystore
+
+# Build outputs
+.gradle/
+.kotlin/
+app/build/
+build/
+*.apk
+build-*.log
+
+# Working files
+tools/previews/
+tools/previews2/
+tools/mirror-cache/
+tools/key_report.json

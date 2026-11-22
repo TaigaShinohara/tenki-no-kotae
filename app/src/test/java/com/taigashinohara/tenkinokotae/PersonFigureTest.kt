@@ -1,0 +1,354 @@
+package com.taigashinohara.tenkinokotae
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * 「今日の人」 (v0.1.14): the pure variation function. The drawing is
+ * not tested (it is a picture); what the picture must *say* is —
+ * garment per rank, the umbrella in hand, the hat threshold, and the
+ * cold / heat marks.
+ */
+class PersonFigureTest {
+
+    private fun spec(
+        rank: Int,
+        level: Rules.UmbrellaLevel = Rules.UmbrellaLevel.NONE,
+        uvMax: Double = 0.0
+    ) = PersonFigure.spec(rank, level, uvMax)
+
+    @Test fun garment_followsRank() {
+        assertEquals(PersonGarment.TEE_SHORTS, spec(0).garment)
+        assertEquals(PersonGarment.SHIRT, spec(1).garment)
+        assertEquals(PersonGarment.CARDIGAN, spec(2).garment)
+        assertEquals(PersonGarment.SWEATER_OUTER, spec(3).garment)
+        assertEquals(PersonGarment.COAT, spec(4).garment)
+        assertEquals(PersonGarment.COAT_SCARF, spec(5).garment)
+        assertEquals(PersonGarment.DOWN_GLOVES, spec(6).garment)
+    }
+
+    @Test fun garment_rankIsClamped() {
+        assertEquals(PersonGarment.TEE_SHORTS, spec(-2).garment)
+        assertEquals(PersonGarment.DOWN_GLOVES, spec(9).garment)
+    }
+
+    @Test fun umbrella_followsLevel() {
+        assertEquals(PersonUmbrella.OPEN, spec(3, Rules.UmbrellaLevel.NEED).umbrella)
+        assertEquals(PersonUmbrella.FOLDED, spec(3, Rules.UmbrellaLevel.FOLDING).umbrella)
+        assertEquals(PersonUmbrella.NONE, spec(3, Rules.UmbrellaLevel.NONE).umbrella)
+    }
+
+    @Test fun hat_fromUvMustLevel() {
+        // Rules.sunscreen: 必須 starts at UV 6. The hat follows it.
+        assertFalse(spec(0, uvMax = 5.9).hat)
+        assertTrue(spec(0, uvMax = 6.0).hat)
+        assertTrue(spec(0, uvMax = 8.0).hat)
+    }
+
+    @Test fun shiver_onlyOnColdRanks() {
+        assertFalse(spec(4).shiver)
+        assertTrue(spec(5).shiver)
+        assertTrue(spec(6).shiver)
+    }
+
+    @Test fun sweat_onlyOnHottestRank() {
+        assertTrue(spec(0).sweat)
+        assertFalse(spec(1).sweat)
+        assertFalse(spec(6).sweat)
+    }
+
+    @Test fun coldestDay_allColdSignsTogether() {
+        val s = spec(6, Rules.UmbrellaLevel.NEED, uvMax = 1.0)
+        assertEquals(PersonGarment.DOWN_GLOVES, s.garment)
+        assertEquals(PersonUmbrella.OPEN, s.umbrella)
+        assertTrue(s.shiver)
+        assertFalse(s.sweat)
+        assertFalse(s.hat)
+    }
+
+    @Test fun hottestDay_allHeatSignsTogether() {
+        val s = spec(0, Rules.UmbrellaLevel.NONE, uvMax = 9.0)
+        assertEquals(PersonGarment.TEE_SHORTS, s.garment)
+        assertTrue(s.sweat)
+        assertTrue(s.hat)
+        assertFalse(s.shiver)
+    }
+
+    // ---- v0.1.16: the spec now picks generated picture assets ----
+
+    @Test fun art_followsGarment() {
+        // One portrait per garment, in rank order — the compositor's
+        // base layer. A mix-up here would dress the person in the
+        // wrong rank's clothes while the text says another.
+        assertEquals(PersonArt.RANK0, PersonFigure.art(PersonGarment.TEE_SHORTS))
+        assertEquals(PersonArt.RANK1, PersonFigure.art(PersonGarment.SHIRT))
+        assertEquals(PersonArt.RANK2, PersonFigure.art(PersonGarment.CARDIGAN))
+        assertEquals(PersonArt.RANK3, PersonFigure.art(PersonGarment.SWEATER_OUTER))
+        assertEquals(PersonArt.RANK4, PersonFigure.art(PersonGarment.COAT))
+        assertEquals(PersonArt.RANK5, PersonFigure.art(PersonGarment.COAT_SCARF))
+        assertEquals(PersonArt.RANK6, PersonFigure.art(PersonGarment.DOWN_GLOVES))
+    }
+
+    // ---- v0.1.18: the person's height is sized from the leftover ----
+
+    @Test fun height_standardColumnTypicalDay() {
+        // The standard column (700dp) and a typical day's fixed
+        // parts as homeFixedHeightDp sums them (340dp = column
+        // padding + city 53, the screenshot's two-line conclusion
+        // 98, a gap note 34, chips at a two-line answer 96, two
+        // small lines 59) leave 360dp; the person takes 60% of it —
+        // about 200dp, up from the fixed 148dp step.
+        assertEquals(216, PersonFigure.heightDp(700f, 340f))
+    }
+
+    @Test fun height_minimumColumnTypicalDay() {
+        // The minimum column (620dp), same typical day: 280dp left,
+        // 60% is 168 — the smaller screen still gets a present
+        // figure, not the old 128dp step.
+        assertEquals(168, PersonFigure.heightDp(620f, 340f))
+    }
+
+    @Test fun height_lightDayHitsTheMaximum() {
+        // The v0.1.17 screenshot's own day (no gap note: fixed
+        // 306dp) in the standard column leaves 394dp; 60% of it
+        // overshoots the band, so the maximum answers.
+        assertEquals(
+            PersonFigure.HEIGHT_MAX_DP,
+            PersonFigure.heightDp(700f, 306f)
+        )
+        // The same light day in the minimum column: 188dp.
+        assertEquals(188, PersonFigure.heightDp(620f, 306f))
+    }
+
+    @Test fun height_fitCapBeatsMinimumOnTheFullestDay() {
+        // Every fixed part at its maximum at once (465dp) in the
+        // minimum column leaves 155dp: the share (93) and even the
+        // minimum (150) would crowd out the reserve, so the cap
+        // sizes the person to what is left minus the reserve — and
+        // the stack still fits the column.
+        val h = PersonFigure.heightDp(620f, 465f)
+        assertEquals(143, h)
+        assertTrue(465 + h <= 620)
+    }
+
+    @Test fun height_clampedAtMaximumOnTallColumns() {
+        // A tall column with a light day leaves far more than the
+        // person may take: the maximum keeps the figure from
+        // growing without bound.
+        assertEquals(
+            PersonFigure.HEIGHT_MAX_DP,
+            PersonFigure.heightDp(1000f, 300f)
+        )
+    }
+
+    @Test fun height_neverOverflowsTheColumn() {
+        // For any plausible column / fixed pair with something left,
+        // fixed + person stays inside the column, with the reserve
+        // to spare whenever the leftover allows it.
+        for (column in listOf(500f, 620f, 700f, 800f, 1000f)) {
+            for (fixed in listOf(280f, 353f, 420f, 465f)) {
+                val h = PersonFigure.heightDp(column, fixed)
+                assertTrue("h=$h column=$column fixed=$fixed", h >= 0)
+                assertTrue(
+                    "fixed + h <= column (column=$column fixed=$fixed h=$h)",
+                    fixed + h <= column
+                )
+            }
+        }
+    }
+
+    @Test fun height_growsWithTheLeftover() {
+        // The share rule, monotonically: more room (a taller column
+        // or a lighter day) never makes the person smaller.
+        assertTrue(PersonFigure.heightDp(700f, 340f) > PersonFigure.heightDp(620f, 340f))
+        assertTrue(PersonFigure.heightDp(700f, 300f) > PersonFigure.heightDp(700f, 400f))
+    }
+
+    @Test fun height_degenerateColumnKeepsTheMinimum() {
+        // Fixed parts alone exceeding the column is a degenerate
+        // window; the stack is over budget no matter what, and the
+        // defined answer is the minimum.
+        assertEquals(
+            PersonFigure.HEIGHT_MIN_DP,
+            PersonFigure.heightDp(400f, 465f)
+        )
+    }
+
+    @Test fun anchors_stayInsideThePersonRect() {
+        // The hand anchors are measured fractions of the person rect;
+        // one outside 0..1 would put the umbrella's shaft end (and
+        // the folded umbrella) off the figure entirely.
+        for (g in PersonGarment.values()) {
+            val (x, y) = PersonAnchors.handR(g)
+            assertTrue("$g hand x in range", x in 0f..1f)
+            assertTrue("$g hand y in range", y in 0f..1f)
+        }
+        assertTrue(PersonAnchors.HEAD_CX in 0f..1f)
+        assertTrue(PersonAnchors.HAT_BOTTOM in 0f..1f)
+        assertTrue(PersonAnchors.UMB_SHAFT_AT in 0f..1f)
+    }
+
+    // ---- v0.1.19: the layered outfit ----
+
+    private fun spec19(
+        rank: Int,
+        level: Rules.UmbrellaLevel = Rules.UmbrellaLevel.NONE,
+        uvMax: Double = 0.0,
+        snow: Boolean = false,
+        feel: Double? = null,
+        humidity: Double? = null
+    ) = PersonFigure.spec(rank, level, uvMax, snow, feel, humidity)
+
+    @Test fun outfit_layersPerRank() {
+        assertEquals(PersonBase.BODY_B to PersonTop.TSHIRT, PersonFigure.outfitFor(0, false))
+        assertEquals(PersonBase.BODY_A to PersonTop.SHIRT, PersonFigure.outfitFor(1, false))
+        assertEquals(PersonBase.BODY_A to PersonTop.CARDIGAN, PersonFigure.outfitFor(2, false))
+        assertEquals(PersonBase.BODY_A to PersonTop.LIGHT_OUTER, PersonFigure.outfitFor(3, false))
+        assertEquals(PersonBase.BODY_A to PersonTop.KNIT_COAT, PersonFigure.outfitFor(4, false))
+        // Rank 5 is the hybrid: its v0.1.16 portrait, no top over it.
+        assertEquals(PersonBase.RANK5_PORTRAIT to null, PersonFigure.outfitFor(5, false))
+        assertEquals(PersonBase.BODY_C to PersonTop.DOWN, PersonFigure.outfitFor(6, false))
+        // The spec agrees with the outfit table.
+        for (r in 0..6) {
+            val s = spec19(r)
+            assertEquals(PersonFigure.outfitFor(r, false).first, s.base)
+            assertEquals(PersonFigure.outfitFor(r, false).second, s.top)
+        }
+    }
+
+    @Test fun raincoat_onlyOnNeedDaysInMidRanks() {
+        for (r in 2..4) {
+            val s = spec19(r, Rules.UmbrellaLevel.NEED)
+            assertEquals("rank $r", PersonBase.RAINCOAT, s.base)
+            assertEquals("rank $r", null, s.top)
+            assertEquals("rank $r", PersonHeld.OPEN, s.held)
+        }
+        // Outside the mid ranks the coat stays the rank's own, and a
+        // folding day never brings the raincoat out.
+        assertEquals(PersonBase.BODY_A, spec19(1, Rules.UmbrellaLevel.NEED).base)
+        assertEquals(PersonBase.RANK5_PORTRAIT, spec19(5, Rules.UmbrellaLevel.NEED).base)
+        assertEquals(PersonBase.BODY_C, spec19(6, Rules.UmbrellaLevel.NEED).base)
+        assertEquals(PersonBase.BODY_A, spec19(3, Rules.UmbrellaLevel.FOLDING).base)
+    }
+
+    @Test fun knitcap_onSnowDaysBeatsTheCap() {
+        val s = spec19(3, uvMax = 9.0, snow = true)
+        assertEquals(PersonHead.KNITCAP, s.head)
+        assertFalse(s.hat)
+        assertEquals(PersonHead.CAP, spec19(3, uvMax = 9.0, snow = false).head)
+        assertEquals(PersonHead.NONE, spec19(3, uvMax = 2.0, snow = false).head)
+    }
+
+    @Test fun sunglasses_fromUv8() {
+        assertFalse(spec19(0, uvMax = 7.9).sunglasses)
+        assertTrue(spec19(0, uvMax = 8.0).sunglasses)
+    }
+
+    @Test fun parasol_needsUv8AndNoRainUmbrella() {
+        assertEquals(PersonHeld.PARASOL, spec19(2, uvMax = 8.0).held)
+        assertEquals(PersonHeld.PARASOL, spec19(0, uvMax = 9.5).held)
+        // The rain umbrella always wins over the parasol.
+        assertEquals(
+            PersonHeld.OPEN,
+            spec19(2, Rules.UmbrellaLevel.NEED, uvMax = 9.0).held
+        )
+        assertEquals(
+            PersonHeld.FOLDED,
+            spec19(2, Rules.UmbrellaLevel.FOLDING, uvMax = 9.0).held
+        )
+        // Below UV 8 there is no parasol (and only rank 0 fans itself).
+        assertEquals(PersonHeld.NONE, spec19(2, uvMax = 7.9).held)
+    }
+
+    @Test fun uchiwa_onlyHottestRankWithoutUmbrella() {
+        assertEquals(PersonHeld.UCHIWA, spec19(0, uvMax = 3.0).held)
+        assertEquals(PersonHeld.NONE, spec19(1, uvMax = 3.0).held)
+        assertEquals(
+            PersonHeld.FOLDED,
+            spec19(0, Rules.UmbrellaLevel.FOLDING, uvMax = 3.0).held
+        )
+    }
+
+    @Test fun towel_needsHottestRankAnd33Degrees() {
+        assertEquals(PersonNeck.TOWEL, spec19(0, feel = 33.0).neck)
+        assertEquals(PersonNeck.TOWEL, spec19(0, feel = 36.5).neck)
+        assertEquals(PersonNeck.NONE, spec19(0, feel = 32.9).neck)
+        // No daytime data, no towel — the rule never guesses.
+        assertEquals(PersonNeck.NONE, spec19(0, feel = null).neck)
+        assertEquals(PersonNeck.NONE, spec19(1, feel = 35.0).neck)
+    }
+
+    @Test fun mask_needsColdRankAndDryAir() {
+        assertTrue(spec19(4, humidity = 39.9).mask)
+        assertTrue(spec19(6, humidity = 20.0).mask)
+        assertFalse(spec19(4, humidity = 40.0).mask)
+        assertFalse(spec19(3, humidity = 20.0).mask)
+        // A source without real humidity never fires the mask.
+        assertFalse(spec19(5, humidity = null).mask)
+    }
+
+    @Test fun mufflerAndMittens_onTheColdRanks() {
+        assertEquals(PersonNeck.MUFFLER, spec19(5).neck)
+        assertEquals(PersonNeck.MUFFLER, spec19(6).neck)
+        assertEquals(PersonNeck.NONE, spec19(4).neck)
+        assertTrue(spec19(6).mittens)
+        assertFalse(spec19(5).mittens)
+    }
+
+    @Test fun padTop_followsTheTallestProp() {
+        assertEquals(0.34f, PersonFigure.padTopRatio(spec19(2, uvMax = 8.0)), 0.001f)
+        assertEquals(0.04f, PersonFigure.padTopRatio(spec19(3, snow = true)), 0.001f)
+        assertEquals(0f, PersonFigure.padTopRatio(spec19(3, uvMax = 7.0)), 0.001f)
+        assertEquals(0f, PersonFigure.padTopRatio(spec19(3)), 0.001f)
+    }
+
+    @Test fun height_withPadBudgetsTheWholeBlock() {
+        // padRatio 0 must reproduce the v0.1.18 numbers exactly.
+        for ((c, f) in listOf(700f to 340f, 620f to 340f, 620f to 465f, 1000f to 300f)) {
+            assertEquals(PersonFigure.heightDp(c, f), PersonFigure.heightDp(c, f, 0f))
+        }
+        // A parasol day: the person shrinks so person + pad still
+        // fits the same share of the leftover.
+        val h = PersonFigure.heightDp(700f, 340f, 0.34f)
+        assertEquals(161, h)
+        assertTrue(340f + h * 1.34f <= 700f)
+        // And never overflows the column, pad included.
+        for (column in listOf(500f, 620f, 700f, 800f)) {
+            for (fixed in listOf(280f, 420f, 465f)) {
+                val hh = PersonFigure.heightDp(column, fixed, 0.34f)
+                assertTrue("h=$hh column=$column fixed=$fixed", hh >= 0)
+                assertTrue(
+                    "fixed + block <= column (column=$column fixed=$fixed h=$hh)",
+                    fixed + hh * 1.34f <= column + 0.5f
+                )
+            }
+        }
+    }
+
+    @Test fun rigsAndCanvasBoxes_stayInRange() {
+        for (base in PersonBase.values()) {
+            val rig = PersonRigs.rig(base)
+            assertTrue("$base face", rig.faceLeft < rig.faceRight)
+            assertTrue("$base face", rig.faceTop < rig.faceBottom)
+            for (v in listOf(
+                rig.faceCx, rig.faceTop, rig.faceBottom, rig.faceLeft, rig.faceRight,
+                rig.handRx, rig.handRy, rig.handLx, rig.handLy
+            )) {
+                assertTrue("$base rig value $v in range", v in 0f..1f)
+            }
+        }
+        val canvasArts = listOf(
+            PersonArt.BODY_A, PersonArt.BODY_B, PersonArt.BODY_C,
+            PersonArt.TOP_TSHIRT, PersonArt.TOP_SHIRT, PersonArt.TOP_CARDIGAN,
+            PersonArt.TOP_LIGHTOUTER, PersonArt.TOP_KNITCOAT, PersonArt.TOP_DOWN,
+            PersonArt.OUTFIT_RAINCOAT
+        )
+        for (art in canvasArts) {
+            val b = PersonCanvas.box(art)
+            assertTrue("$art box", b[0] >= 0f && b[1] >= 0f && b[2] <= 1f && b[3] <= 1f)
+            assertTrue("$art box", b[0] < b[2] && b[1] < b[3])
+        }
+    }
+}
