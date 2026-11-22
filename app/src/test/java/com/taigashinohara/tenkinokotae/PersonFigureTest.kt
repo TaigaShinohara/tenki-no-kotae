@@ -540,6 +540,27 @@ class PersonFigureTest {
         assertEquals(626 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_OPEN))
         assertEquals(283 to 1024, PersonAnchors.armPx(PersonArt.ARM_CARDIGAN_FOLDING))
         assertEquals(282 to 1024, PersonAnchors.armPx(PersonArt.ARM_KNITCOAT_FOLDING))
+        // v0.1.27: the regenerated fan picture is 568 wide, the
+        // rebuilt parasol kept its frame.
+        assertEquals(568 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_UCHIWA))
+        assertEquals(579 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_PARASOL))
+    }
+
+    @Test fun v0127_auditFixNumbers_stayPinned() {
+        // The two measured numbers the illustration audit moved
+        // (tools/illust_fixes/FIX_REPORT.md 小2 / 小4): the
+        // raincoat's cheek width is the FACE's width (0.40), not
+        // the hood opening's (0.464) — it sizes only the mask —
+        // and the tee's topCal width is 0.64, which lets rank 0's
+        // hands read at the shirt's sides.
+        assertEquals(0.40f, PersonRigs.rig(PersonBase.RAINCOAT).cheekW, 0.001f)
+        assertEquals(0.64f, PersonCanvas.topCal(PersonTop.TSHIRT)[0], 0.001f)
+        // The fan's re-measured grip on its regenerated picture.
+        val uchiwa = PersonAnchors.armAnchor(PersonArt.ARM_POLO_UCHIWA)
+        assertEquals(0.42f, uchiwa.gripX, 0.001f)
+        assertEquals(0.895f, uchiwa.gripY, 0.001f)
+        assertEquals(0.40f, uchiwa.dhFrac, 0.001f)
+        assertEquals(-16f, uchiwa.rotDeg, 0.001f)
     }
 
     @Test fun variantInner_staysSane() {
@@ -577,7 +598,9 @@ class PersonFigureTest {
             PersonArt.FIG_RAINCOAT_OPEN
         )) {
             val r = PersonAnchors.variantInner(art)
-            assertTrue("$art figure lowered ${r[1]}", r[1] in 0.09f..0.18f)
+            // v0.1.27: rank 5's regenerated portrait re-measured
+            // at y0 = 0.0818, just under the old 0.09 floor.
+            assertTrue("$art figure lowered ${r[1]}", r[1] in 0.08f..0.18f)
         }
     }
 
@@ -587,8 +610,11 @@ class PersonFigureTest {
         // variant frames on the portraits / raincoat.
         assertEquals(0.18f, PersonFigure.padTopRatio(spec19(0, Rules.UmbrellaLevel.NEED)), 0.001f)
         assertEquals(0.17f, PersonFigure.padTopRatio(spec19(1, Rules.UmbrellaLevel.NEED)), 0.001f)
-        assertEquals(0.13f, PersonFigure.padTopRatio(spec19(5, Rules.UmbrellaLevel.NEED)), 0.001f)
-        assertEquals(0.12f, PersonFigure.padTopRatio(spec19(6, Rules.UmbrellaLevel.NEED)), 0.001f)
+        // v0.1.27: the regenerated OPEN portraits re-measured —
+        // rank 5's figure sits higher in its frame now (poke
+        // 0.089 → pad 0.10), rank 6's lower (poke 0.158 → 0.17).
+        assertEquals(0.10f, PersonFigure.padTopRatio(spec19(5, Rules.UmbrellaLevel.NEED)), 0.001f)
+        assertEquals(0.17f, PersonFigure.padTopRatio(spec19(6, Rules.UmbrellaLevel.NEED)), 0.001f)
         // Rank 3 + NEED is a raincoat day: the raincoat variant's
         // canopy room is the tallest of the set.
         assertEquals(0.21f, PersonFigure.padTopRatio(spec19(3, Rules.UmbrellaLevel.NEED)), 0.001f)

@@ -92,6 +92,28 @@ import kotlin.math.roundToInt
  * keep the v0.1.22 grip-point drawing as the fallback. The
  * generic bare-arm set from v0.1.25 still waits unused.
  *
+ * v0.1.27 (docs/FEATURE_v0.1.27.md) works through the full
+ * illustration audit (tools/illust_audit/, 8 findings — 3 medium,
+ * 5 small; the fixes were prepared and verified in
+ * tools/illust_fixes/FIX_REPORT.md). The head layers lose the
+ * shirt collar / shoulder fragment that survived at their bottom
+ * edge (it drew a straight horizontal seam across the chest);
+ * the polo parasol's arm is rebuilt so its sleeve lands on the
+ * body's shoulder, and the fan's arm is regenerated with a domed
+ * shoulder cap instead of the flat cut that floated beside the
+ * hair. The neck towel's hem is rounded. Two measured numbers
+ * move: the RAINCOAT rig's cheekW 0.464 → 0.40 (it was the hood
+ * opening's width, not the face's — the mask overflowed onto the
+ * hood), and the TSHIRT topCal width 0.70 → 0.64 (the tee's wide
+ * body panel hid half of rank 0's hands). The open-umbrella
+ * portraits of ranks 5 and 6 are regenerated from their bases so
+ * the figure keeps the base's build and muffler length (rank 6
+ * still measures ≈5–10% slimmer — the generator redraws what it
+ * should not touch; see the FEATURE doc), with their inner rects
+ * re-measured the measure26b way. And the raincoat base gets its
+ * own head-layer variants, clipped to the hood opening, so the
+ * hair no longer spills over the hood's rim on that base.
+ *
  * v0.1.21 (docs/FIX_v0.1.21.md) extends the hybrid call to rank 6:
  * the down top is a closed-collar product shot with no face opening
  * at all, so laid over the wide body it swallowed the whole face —
@@ -149,6 +171,9 @@ enum class PersonArt {
     TOP_TSHIRT, TOP_SHIRT, TOP_CARDIGAN, TOP_LIGHTOUTER, TOP_KNITCOAT, TOP_DOWN,
     OUTFIT_RAINCOAT,
     LAYER_HEAD_CAP, LAYER_HEAD_KNITCAP,
+    // v0.1.27: the raincoat base's own head layers, clipped to
+    // the hood opening (same canvas, same face anchors).
+    LAYER_HEAD_CAP_RAIN, LAYER_HEAD_KNITCAP_RAIN,
     PROP_MASK, PROP_SUNGLASSES, PROP_MUFFLER,
     PROP_MITTEN_L, PROP_MITTEN_R, PROP_TOWEL, PROP_PARASOL, PROP_UCHIWA,
     PROP_FOLDING,
@@ -567,7 +592,13 @@ object PersonCanvas {
      * docs/FEATURE_v0.1.25.md; verified on enlarged crops
      * (tools/audit25/). */
     fun topCal(top: PersonTop): FloatArray = when (top) {
-        PersonTop.TSHIRT -> floatArrayOf(0.70f, 0.875f, 0f, 0.028f)
+        // v0.1.27: the width 0.70 → 0.64 — the tee's wide body
+        // panel (not its short sleeves) covered the hands at its
+        // hem line; at 0.64 the visible-hand share rises
+        // 50% → 60% and the arm line reads at the sides. The
+        // height terms were measured to make no difference and
+        // stay. (tools/illust_fixes/ 小4.)
+        PersonTop.TSHIRT -> floatArrayOf(0.64f, 0.875f, 0f, 0.028f)
         PersonTop.SHIRT -> floatArrayOf(0.80f, 0.80f, 0f, 0.014f)
         PersonTop.CARDIGAN -> floatArrayOf(0.55f, 0.45f, 0f, -0.003f)
         PersonTop.LIGHT_OUTER -> floatArrayOf(0.63f, 0.625f, 0f, 0.000f)
@@ -663,10 +694,18 @@ object PersonRigs {
             0.80f, 0.63f, 0.20f, 0.63f,
             0.216f, 0.261f, 0.328f
         )
+        // v0.1.27: cheekW 0.464 → 0.40. The 0.464 was the hood
+        // OPENING's width, not the face's: below the mouth the
+        // baked face narrows fast (the chin tucks into the hood),
+        // so the mask cloth (1.02 × cheekW) overflowed onto the
+        // hood wall and its ear loops drew over the hood cloth.
+        // At 0.40 the cloth stays on the face and the loops hide
+        // at the hood's rim. cheekW feeds only the mask width.
+        // (tools/illust_fixes/ 小2.)
         PersonBase.RAINCOAT -> PersonRig(
             0.507f, 0.081f, 0.336f, 0.201f, 0.743f,
             0.848f, 0.629f, 0.148f, 0.629f,
-            0.216f, 0.260f, 0.464f
+            0.216f, 0.260f, 0.40f
         )
     }
 }
@@ -973,7 +1012,7 @@ object PersonAnchors {
         PersonArt.ARM_POLO_OPEN -> 626 to 1024
         PersonArt.ARM_POLO_FOLDING -> 290 to 1024
         PersonArt.ARM_POLO_PARASOL -> 579 to 1024
-        PersonArt.ARM_POLO_UCHIWA -> 540 to 1024
+        PersonArt.ARM_POLO_UCHIWA -> 568 to 1024
         PersonArt.ARM_CARDIGAN_OPEN -> 626 to 1024
         PersonArt.ARM_CARDIGAN_FOLDING -> 283 to 1024
         PersonArt.ARM_KNITCOAT_OPEN -> 625 to 1024
@@ -991,10 +1030,15 @@ object PersonAnchors {
             ArmAnchor(0.83f, 0.84f, 0.815f, 1.20f, 0.95f, 0f)
         PersonArt.ARM_POLO_FOLDING ->
             ArmAnchor(0.40f, 0.40f, null, null, 0.70f, 12f)
+        // v0.1.27: the parasol picture was rebuilt in place (its
+        // sleeve floated off the shoulder) — same size, same
+        // anchor. The fan picture was regenerated with a domed
+        // shoulder cap: new width (568) and the grip re-measured
+        // on the new fist at (0.42, 0.895); dh / rot unchanged.
         PersonArt.ARM_POLO_PARASOL ->
             ArmAnchor(0.655f, 0.955f, null, 1.10f, 0.66f, 0f)
         PersonArt.ARM_POLO_UCHIWA ->
-            ArmAnchor(0.47f, 0.93f, null, null, 0.40f, -16f)
+            ArmAnchor(0.42f, 0.895f, null, null, 0.40f, -16f)
         PersonArt.ARM_CARDIGAN_OPEN ->
             ArmAnchor(0.57f, 0.84f, 0.545f, 1.20f, 0.95f, 0f)
         PersonArt.ARM_CARDIGAN_FOLDING ->
@@ -1139,12 +1183,17 @@ object PersonAnchors {
      * from the base's rig — stay true.
      */
     fun variantInner(art: PersonArt): FloatArray = when (art) {
+        // v0.1.27: the two OPEN portraits were regenerated from
+        // their bases (the audit found them redrawn ≈20% slimmer
+        // on rank 5, with shorter mufflers); the rects below are
+        // re-measured on the new pictures with the measure26b
+        // detectors (see docs/FEATURE_v0.1.27.md).
         PersonArt.FIG_RANK5_OPEN ->
-            floatArrayOf(-0.0017f, 0.1074f, 0.8364f, 0.9999f)
+            floatArrayOf(0.0039f, 0.0818f, 0.8056f, 0.9999f)
         PersonArt.FIG_RANK5_FOLDING ->
             floatArrayOf(0.0002f, -0.0011f, 1.0002f, 1.0000f)
         PersonArt.FIG_RANK6_OPEN ->
-            floatArrayOf(0.0103f, 0.0984f, 0.8637f, 0.9999f)
+            floatArrayOf(0.0037f, 0.1361f, 0.8830f, 0.9999f)
         PersonArt.FIG_RANK6_FOLDING ->
             floatArrayOf(0.0016f, -0.0023f, 0.9756f, 1.0000f)
         PersonArt.FIG_RAINCOAT_OPEN ->
@@ -1216,6 +1265,8 @@ object PersonComposer {
         PersonArt.OUTFIT_RAINCOAT -> R.drawable.outfit_raincoat
         PersonArt.LAYER_HEAD_CAP -> R.drawable.layer_head_cap
         PersonArt.LAYER_HEAD_KNITCAP -> R.drawable.layer_head_knitcap
+        PersonArt.LAYER_HEAD_CAP_RAIN -> R.drawable.layer_head_cap_rain
+        PersonArt.LAYER_HEAD_KNITCAP_RAIN -> R.drawable.layer_head_knitcap_rain
         PersonArt.PROP_MASK -> R.drawable.prop_mask
         PersonArt.PROP_SUNGLASSES -> R.drawable.prop_sunglasses
         PersonArt.PROP_MUFFLER -> R.drawable.prop_muffler
@@ -1436,10 +1487,19 @@ object PersonComposer {
         //      separately they kept sitting slightly off it, so
         //      the hat now arrives already worn) ----
         if (spec.head != PersonHead.NONE) {
-            val art = if (spec.head == PersonHead.CAP) {
-                PersonArt.LAYER_HEAD_CAP
-            } else {
-                PersonArt.LAYER_HEAD_KNITCAP
+            // v0.1.27: the raincoat base wears its own head-layer
+            // variants, clipped to the hood opening — the standard
+            // layers' hair spilled over the hood's rim and the hat
+            // sat on top of the hood. Same canvas and face
+            // anchors, so the rect below is unchanged.
+            val rain = spec.base == PersonBase.RAINCOAT
+            val art = when {
+                spec.head == PersonHead.CAP && rain ->
+                    PersonArt.LAYER_HEAD_CAP_RAIN
+                spec.head == PersonHead.CAP ->
+                    PersonArt.LAYER_HEAD_CAP
+                rain -> PersonArt.LAYER_HEAD_KNITCAP_RAIN
+                else -> PersonArt.LAYER_HEAD_KNITCAP
             }
             val img = bmp(ctx, art)
             val r = PersonAnchors.headLayerRect(
