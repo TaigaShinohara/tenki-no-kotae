@@ -83,6 +83,15 @@ enum class PersonArt {
     PROP_FOLDING
 }
 
+/** The outfit-linked elements of a spec (v0.1.20); see
+ * [PersonFigure.outfitLinked]. */
+data class OutfitLinked(
+    val neck: PersonNeck,
+    val mittens: Boolean,
+    val shiver: Boolean,
+    val sweat: Boolean
+)
+
 data class PersonSpec(
     val garment: PersonGarment,
     /** The rain-umbrella summary kept from v0.1.16: OPEN / FOLDED when
@@ -159,6 +168,31 @@ object PersonFigure {
     }
 
     /**
+     * The elements an outfit carries with it (v0.1.20): the muffler
+     * on the cold ranks, the mittens on the coldest, the shiver and
+     * sweat signs. Derived from the outfit alone — never from the
+     * day — so the test screen's manual outfit can re-derive them
+     * from the outfit it picked instead of inheriting whatever
+     * today's auto spec happened to wear (the v0.1.19 leak: a
+     * hand-picked summer outfit kept the cold day's muffler, and a
+     * hand-picked raincoat kept its muffler and shiver). The
+     * raincoat is a finished full-body picture: it carries none of
+     * these, at any rank. The neck towel is NOT outfit-linked — it
+     * is a weather element (extreme heat), and [spec] layers it
+     * over this result.
+     */
+    fun outfitLinked(rank: Int, raincoat: Boolean): OutfitLinked {
+        if (raincoat) return OutfitLinked(PersonNeck.NONE, false, false, false)
+        val r = rank.coerceIn(0, 6)
+        return OutfitLinked(
+            neck = if (r >= 5) PersonNeck.MUFFLER else PersonNeck.NONE,
+            mittens = r == 6,
+            shiver = r >= 5,
+            sweat = r == 0
+        )
+    }
+
+    /**
      * rank: Rules clothing rank 0 (hottest) .. 6 (coldest), already
      * including the feel offset and the wind step. Out-of-range ranks
      * are clamped, never an error.
@@ -194,12 +228,19 @@ object PersonFigure {
                 else -> PersonHeld.NONE
             }
         }
-        val neck = when {
-            r >= 5 -> PersonNeck.MUFFLER
-            r == 0 && daytimeFeelAvg != null && daytimeFeelAvg >= TOWEL_FEEL ->
+        // The outfit-linked elements come from the outfit alone
+        // (v0.1.20: one derivation for the auto spec and the test
+        // screen alike); the neck towel is a weather element and
+        // layers over the linked neck on its extreme-heat days.
+        val linked = outfitLinked(r, raincoat)
+        val neck =
+            if (!raincoat && r == 0 && daytimeFeelAvg != null &&
+                daytimeFeelAvg >= TOWEL_FEEL
+            ) {
                 PersonNeck.TOWEL
-            else -> PersonNeck.NONE
-        }
+            } else {
+                linked.neck
+            }
         return PersonSpec(
             garment = garmentOf(r),
             umbrella = when (umbrellaLevel) {
@@ -208,8 +249,8 @@ object PersonFigure {
                 Rules.UmbrellaLevel.NONE -> PersonUmbrella.NONE
             },
             hat = head == PersonHead.CAP,
-            shiver = r >= 5,
-            sweat = r == 0,
+            shiver = linked.shiver,
+            sweat = linked.sweat,
             base = base,
             top = top,
             head = head,
@@ -217,7 +258,7 @@ object PersonFigure {
             mask = r >= MASK_RANK && daytimeHumidityAvg != null &&
                 daytimeHumidityAvg < MASK_HUMIDITY,
             sunglasses = uvMax >= SUNGLASSES_UV,
-            mittens = r == 6,
+            mittens = linked.mittens,
             held = held
         )
     }
@@ -547,7 +588,9 @@ object PersonAnchors {
  * bottom, shrunk by [PersonFigure.padTopRatio] so a parasol canopy
  * or a knit cap has room above the head, and centered horizontally.
  * On the hybrid portrait base the muffler and the shiver are baked
- * into the picture already, so those two are not drawn again.
+ * into the picture already, so those two are not drawn again. On
+ * the raincoat base — a finished full-body picture — the neck,
+ * mitten and sign layers are not drawn at all (v0.1.20).
  */
 object PersonComposer {
 
@@ -656,6 +699,12 @@ object PersonComposer {
         val handX = bx(rig.handRx)
         val handY = by(rig.handRy)
         val hybrid = spec.base == PersonBase.RANK5_PORTRAIT
+        // The raincoat is a finished full-body picture (v0.1.20):
+        // no neck / mitten / sign layers over it, whatever the spec
+        // fields say — the guarantee lives here, not only in the
+        // spec's derivation, so a hand-built spec cannot leak them.
+        // Head, face and held layers still go over it as usual.
+        val raincoatBase = spec.base == PersonBase.RAINCOAT
 
         fun drawProp(art: PersonArt, cx: Float, topY: Float, w: Float) {
             val img = bmp(ctx, art)
@@ -669,8 +718,9 @@ object PersonComposer {
             drawProp(art, cx, bottomY - w * img.height / img.width, w)
         }
 
-        // ---- neck (the portrait base wears its muffler baked in) ----
-        when (spec.neck) {
+        // ---- neck (the portrait base wears its muffler baked in;
+        //      the raincoat base takes no neck layer at all) ----
+        if (!raincoatBase) when (spec.neck) {
             PersonNeck.MUFFLER -> if (!hybrid) {
                 val img = bmp(ctx, PersonArt.PROP_MUFFLER)
                 val h = PersonAnchors.MUFFLER_H * ph
@@ -690,7 +740,7 @@ object PersonComposer {
         }
 
         // ---- mittens over the hands ----
-        if (spec.mittens) {
+        if (spec.mittens && !raincoatBase) {
             val mh = PersonAnchors.MITTEN_H * ph
             for ((art, hx, hy) in listOf(
                 Triple(PersonArt.PROP_MITTEN_L, rig.handLx, rig.handLy),
@@ -792,8 +842,9 @@ object PersonComposer {
         }
 
         // ---- code-drawn signs (the hybrid portrait has its shiver
-        //      baked in; the sweat was never on a cold rank) ----
-        if (spec.sweat) {
+        //      baked in; the sweat was never on a cold rank; the
+        //      raincoat base takes neither sign) ----
+        if (spec.sweat && !raincoatBase) {
             val drop = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = PersonAnchors.SWEAT_COLOR
                 style = Paint.Style.FILL
@@ -812,7 +863,7 @@ object PersonComposer {
                 canvas.drawPath(path, drop)
             }
         }
-        if (spec.shiver && !hybrid) {
+        if (spec.shiver && !hybrid && !raincoatBase) {
             val zig = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = PersonAnchors.SHIVER_COLOR
                 style = Paint.Style.STROKE

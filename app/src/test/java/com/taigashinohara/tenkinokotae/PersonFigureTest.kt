@@ -327,6 +327,86 @@ class PersonFigureTest {
         }
     }
 
+    // ---- v0.1.20: outfit-linked elements derive from the outfit ----
+
+    @Test fun outfitLinked_followsTheOutfitAlone() {
+        // Rank 0 carries its sweat and nothing else — in particular
+        // no muffler, whatever the day around it is doing.
+        val l0 = PersonFigure.outfitLinked(0, false)
+        assertEquals(PersonNeck.NONE, l0.neck)
+        assertFalse(l0.mittens)
+        assertFalse(l0.shiver)
+        assertTrue(l0.sweat)
+        // The mid ranks carry nothing.
+        for (r in 1..4) {
+            val l = PersonFigure.outfitLinked(r, false)
+            assertEquals("rank $r", PersonNeck.NONE, l.neck)
+            assertFalse("rank $r", l.mittens)
+            assertFalse("rank $r", l.shiver)
+            assertFalse("rank $r", l.sweat)
+        }
+        // Rank 5: muffler + shiver, bare hands. Rank 6 adds mittens.
+        val l5 = PersonFigure.outfitLinked(5, false)
+        assertEquals(PersonNeck.MUFFLER, l5.neck)
+        assertFalse(l5.mittens)
+        assertTrue(l5.shiver)
+        assertFalse(l5.sweat)
+        val l6 = PersonFigure.outfitLinked(6, false)
+        assertEquals(PersonNeck.MUFFLER, l6.neck)
+        assertTrue(l6.mittens)
+        assertTrue(l6.shiver)
+        assertFalse(l6.sweat)
+    }
+
+    @Test fun outfitLinked_raincoatSuppressesEverything() {
+        // The raincoat is a finished full-body picture: no muffler,
+        // no mittens, no signs — at any rank, cold ones included.
+        for (r in 0..6) {
+            val l = PersonFigure.outfitLinked(r, true)
+            assertEquals("rank $r", PersonNeck.NONE, l.neck)
+            assertFalse("rank $r", l.mittens)
+            assertFalse("rank $r", l.shiver)
+            assertFalse("rank $r", l.sweat)
+        }
+    }
+
+    @Test fun spec_agreesWithOutfitLinked() {
+        // The auto spec's linked fields are the outfit derivation
+        // itself (no weather inputs in play), so the test screen
+        // and Home can never drift apart on what an outfit carries.
+        for (r in 0..6) {
+            val s = spec19(r)
+            val l = PersonFigure.outfitLinked(r, false)
+            assertEquals("rank $r neck", l.neck, s.neck)
+            assertEquals("rank $r mittens", l.mittens, s.mittens)
+            assertEquals("rank $r shiver", l.shiver, s.shiver)
+            assertEquals("rank $r sweat", l.sweat, s.sweat)
+        }
+    }
+
+    @Test fun raincoatSpec_carriesNoLinkedElements() {
+        // Home's own guarantee: on a raincoat day the spec itself
+        // already carries no muffler / mittens / signs (the
+        // composer's suppression is the second line of defence).
+        for (r in 2..4) {
+            val s = spec19(r, Rules.UmbrellaLevel.NEED)
+            assertEquals("rank $r", PersonBase.RAINCOAT, s.base)
+            assertEquals("rank $r", PersonNeck.NONE, s.neck)
+            assertFalse("rank $r", s.mittens)
+            assertFalse("rank $r", s.shiver)
+            assertFalse("rank $r", s.sweat)
+        }
+        // Even with a cold, dry, snowy day stacked around it, the
+        // raincoat spec grows no neck layer and no signs.
+        val s = spec19(4, Rules.UmbrellaLevel.NEED, uvMax = 1.0,
+            snow = true, humidity = 20.0)
+        assertEquals(PersonBase.RAINCOAT, s.base)
+        assertEquals(PersonNeck.NONE, s.neck)
+        assertFalse(s.shiver)
+        assertFalse(s.sweat)
+        assertFalse(s.mittens)
+    }
+
     @Test fun rigsAndCanvasBoxes_stayInRange() {
         for (base in PersonBase.values()) {
             val rig = PersonRigs.rig(base)

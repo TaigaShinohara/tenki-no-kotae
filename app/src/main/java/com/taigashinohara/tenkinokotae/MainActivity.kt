@@ -2513,7 +2513,7 @@ class MainActivity : Activity() {
         // source's attribution directly under the data it describes —
         // one home for attribution instead of two.
         col.addView(TextView(this).apply {
-            text = "天気のこたえ v0.1.19（プロトタイプ）"
+            text = "天気のこたえ v0.1.20（プロトタイプ）"
             textSize = 13f; setTextColor(sub)
             setPadding(0, dp(24), 0, 0)
             lineHeight = dp(21)
@@ -2651,13 +2651,36 @@ class MainActivity : Activity() {
             val raincoat = testOutfit == 7
             val r = if (raincoat) autoRank else testOutfit
             val (base, top) = PersonFigure.outfitFor(r, raincoat)
+            // The outfit-linked elements are re-derived from the
+            // picked outfit (v0.1.20), not inherited from the day's
+            // auto spec — a hand-picked summer outfit no longer
+            // keeps the cold day's muffler, and the raincoat keeps
+            // nothing. The neck lands here from the outfit; an
+            // explicit 首 pin below still wins over it, and putting
+            // 首 back to 自動 returns it to the outfit.
+            val linked = PersonFigure.outfitLinked(r, raincoat)
             s = s.copy(
                 garment = PersonFigure.garmentOf(r),
                 base = base, top = top,
-                mittens = !raincoat && r == 6,
-                shiver = r >= 5,
-                sweat = !raincoat && r == 0
+                neck = linked.neck,
+                mittens = linked.mittens,
+                shiver = linked.shiver,
+                sweat = linked.sweat
             )
+            // The fan is the held slot's outfit-linked member: on
+            // 自動 it follows the picked outfit too (the umbrellas
+            // and the parasol are the day's, and stay the day's).
+            if (testHeld < 0 &&
+                (s.held == PersonHeld.UCHIWA || s.held == PersonHeld.NONE)
+            ) {
+                s = s.copy(
+                    held = if (!raincoat && r == 0) {
+                        PersonHeld.UCHIWA
+                    } else {
+                        PersonHeld.NONE
+                    }
+                )
+            }
         }
         if (testHead >= 0) {
             val h = when (testHead) {

@@ -16,3 +16,6 @@ tools/previews/
 tools/previews2/
 tools/mirror-cache/
 tools/key_report.json
+
+# Python tooling
+__pycache__/
