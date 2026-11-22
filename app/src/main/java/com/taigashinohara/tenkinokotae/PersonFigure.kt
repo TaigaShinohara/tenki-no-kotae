@@ -37,7 +37,23 @@ import kotlin.math.roundToInt
  * ranks 0–4 and 6 layer body + top; rank 5 keeps its v0.1.16 portrait
  * as a hybrid base (the winter-coat top's proportions fit no body —
  * scaled by width it runs head to toe, scaled by height the body's
- * arms spill out), with the new props laid over it. The raincoat is
+ * arms spill out), with the new props laid over it.
+ *
+ * v0.1.21 (docs/FIX_v0.1.21.md) extends the hybrid call to rank 6:
+ * the down top is a closed-collar product shot with no face opening
+ * at all, so laid over the wide body it swallowed the whole face —
+ * the user found only the eyes peeking out on device and asked for
+ * the face back (「顔は見えるようにして」). Rank 6 now stands on
+ * its v0.1.16 portrait like rank 5 (its muffler, gloves and shiver
+ * are baked in), and a strict audit of every slot combination in
+ * the Python mirror (tools/mirror_v0121.py) re-anchored the props
+ * to measured feature lines ([PersonRig.eyeY] / [PersonRig.mouthY]):
+ * the sunglasses sit on the eyes now (they were centered on the
+ * mouth), the cap brim and the knit cap's band end above the eye
+ * line (both covered the eyes), the mask hangs from the eye line
+ * (on the standard body it slipped below the chin), and the parasol
+ * — its asset re-cut without the J-hook — grows a drawn shaft down
+ * to the hand like the rain umbrella's. The raincoat is
  * a full-body replacement outfit of its own. New weather-driven
  * parts join the old ones: knit cap (snow days), sunglasses and a
  * parasol (UV 8+), a fan (the hottest rank), a neck towel (extreme
@@ -58,8 +74,9 @@ enum class PersonGarment {
 
 enum class PersonUmbrella { NONE, FOLDED, OPEN }
 
-/** The base the composer builds on (v0.1.19). */
-enum class PersonBase { BODY_A, BODY_B, BODY_C, RANK5_PORTRAIT, RAINCOAT }
+/** The base the composer builds on (v0.1.19; rank 6 joined the
+ * portrait bases in v0.1.21). */
+enum class PersonBase { BODY_A, BODY_B, BODY_C, RANK5_PORTRAIT, RANK6_PORTRAIT, RAINCOAT }
 
 /** A top laid over a body (v0.1.19); null on the portrait / raincoat bases. */
 enum class PersonTop { TSHIRT, SHIRT, CARDIGAN, LIGHT_OUTER, KNIT_COAT, DOWN }
@@ -151,8 +168,10 @@ object PersonFigure {
 
     /**
      * The layered outfit for a rank: which base, which top over it.
-     * Rank 5 is the hybrid (its v0.1.16 portrait, no top); the
-     * raincoat replaces the outfit wholesale on its days.
+     * Ranks 5 and 6 are the hybrids (their v0.1.16 portraits, no top
+     * over them — rank 6 joined in v0.1.21: the down top is a closed
+     * product shot that hid the face); the raincoat replaces the
+     * outfit wholesale on its days.
      */
     fun outfitFor(rank: Int, raincoat: Boolean): Pair<PersonBase, PersonTop?> {
         if (raincoat) return PersonBase.RAINCOAT to null
@@ -163,7 +182,7 @@ object PersonFigure {
             3 -> PersonBase.BODY_A to PersonTop.LIGHT_OUTER
             4 -> PersonBase.BODY_A to PersonTop.KNIT_COAT
             5 -> PersonBase.RANK5_PORTRAIT to null
-            else -> PersonBase.BODY_C to PersonTop.DOWN
+            else -> PersonBase.RANK6_PORTRAIT to null
         }
     }
 
@@ -285,6 +304,8 @@ object PersonFigure {
     fun padTopRatio(spec: PersonSpec): Float = when {
         spec.held == PersonHeld.PARASOL -> 0.34f
         spec.head == PersonHead.KNITCAP -> 0.04f
+        // The cap's dome rises a little past the hair (v0.1.21).
+        spec.head == PersonHead.CAP -> 0.04f
         else -> 0f
     }
 
@@ -383,6 +404,7 @@ object PersonCanvas {
         PersonBase.BODY_C -> PersonArt.BODY_C
         PersonBase.RAINCOAT -> PersonArt.OUTFIT_RAINCOAT
         PersonBase.RANK5_PORTRAIT -> PersonArt.RANK5
+        PersonBase.RANK6_PORTRAIT -> PersonArt.RANK6
     }
 
     fun topArt(top: PersonTop): PersonArt = when (top) {
@@ -415,7 +437,15 @@ data class PersonRig(
     val faceCx: Float, val faceTop: Float, val faceBottom: Float,
     val faceLeft: Float, val faceRight: Float,
     val handRx: Float, val handRy: Float,
-    val handLx: Float, val handLy: Float
+    val handLx: Float, val handLy: Float,
+    /** The measured eye line and mouth line (v0.1.21), fractions of
+     * the body height, from ink-cluster analysis of the shipped
+     * pictures. The face box above is the pale-skin component's
+     * bounds — on some bases it runs into the neck or the hood, so
+     * the face props (sunglasses, mask) are placed from these lines
+     * instead of from fractions of the box. */
+    val eyeY: Float,
+    val mouthY: Float
 ) {
     val faceW: Float get() = faceRight - faceLeft
     val faceH: Float get() = faceBottom - faceTop
@@ -425,23 +455,33 @@ object PersonRigs {
     fun rig(base: PersonBase): PersonRig = when (base) {
         PersonBase.BODY_A -> PersonRig(
             0.502f, 0.180f, 0.399f, 0.248f, 0.747f,
-            0.753f, 0.582f, 0.243f, 0.581f
+            0.753f, 0.582f, 0.243f, 0.581f,
+            0.216f, 0.260f
         )
         PersonBase.BODY_B -> PersonRig(
             0.480f, 0.180f, 0.337f, 0.307f, 0.689f,
-            0.732f, 0.630f, 0.264f, 0.630f
+            0.732f, 0.630f, 0.264f, 0.630f,
+            0.216f, 0.260f
         )
         PersonBase.BODY_C -> PersonRig(
             0.519f, 0.180f, 0.336f, 0.330f, 0.668f,
-            0.893f, 0.629f, 0.106f, 0.629f
+            0.893f, 0.629f, 0.106f, 0.629f,
+            0.216f, 0.260f
         )
         PersonBase.RANK5_PORTRAIT -> PersonRig(
             0.489f, 0.180f, 0.314f, 0.306f, 0.690f,
-            0.756f, 0.629f, 0.242f, 0.629f
+            0.756f, 0.629f, 0.242f, 0.629f,
+            0.217f, 0.260f
+        )
+        PersonBase.RANK6_PORTRAIT -> PersonRig(
+            0.497f, 0.180f, 0.330f, 0.323f, 0.671f,
+            0.80f, 0.63f, 0.20f, 0.63f,
+            0.216f, 0.261f
         )
         PersonBase.RAINCOAT -> PersonRig(
             0.507f, 0.081f, 0.336f, 0.201f, 0.743f,
-            0.848f, 0.629f, 0.148f, 0.629f
+            0.848f, 0.629f, 0.148f, 0.629f,
+            0.216f, 0.260f
         )
     }
 }
@@ -494,28 +534,35 @@ object PersonAnchors {
 
     // ---- v0.1.19 prop anchors (fractions of the body rect) ----
 
-    /** Cap / knit cap: width / body width; the band's bottom. */
-    const val CAP_W = 0.48f
-    const val CAP_BOTTOM = 0.26f
-    const val KNITCAP_W = 0.54f
-    const val KNITCAP_BOTTOM = 0.245f
+    /** Cap / knit cap: width / body width; the brim's / band's
+     * bottom. Both end just above the measured eye line (0.216) —
+     * until v0.1.20 they sat at 0.26 / 0.245, over the eyes. */
+    const val CAP_W = 0.45f
+    const val CAP_BOTTOM = 0.205f
+    const val KNITCAP_W = 0.52f
+    const val KNITCAP_BOTTOM = 0.20f
 
-    /** Mask: width / face width; its top at face top + this share of
-     * the face height (just under the eyes). */
+    /** Mask: width / face width; its top hangs this far below the
+     * measured eye line ([PersonRig.eyeY]), so it starts under the
+     * eyes on every base (until v0.1.20 it was placed by a share of
+     * the skin-box height and slipped below the chin on BODY_A). */
     const val MASK_W = 1.06f
-    const val MASK_TOP = 0.46f
+    const val MASK_DROP = 0.020f
 
-    /** Sunglasses: width / face width; center at face top + this
-     * share of the face height (the eye line). */
+    /** Sunglasses: width / face width; centered on the measured eye
+     * line ([PersonRig.eyeY]) — until v0.1.20 they were centered at
+     * 0.57 of the skin-box height, which is the mouth line. */
     const val SUNG_W = 1.12f
-    const val SUNG_CY = 0.57f
 
     /** Muffler (the asset is cropped to its worn length at keying
-     * time): height / body height; its top. The neck towel: width /
-     * body width; its top. */
-    const val MUFFLER_H = 0.32f
-    const val MUFFLER_TOP = 0.29f
-    const val TOWEL_W = 0.50f
+     * time): height / body height; its top. Sized down in v0.1.21
+     * (0.32 → 0.27): at the old size the ring covered the whole
+     * chest of the slim bodies, and its top band reached the mouth.
+     * The neck towel: width / body width; its top (0.50 → 0.38 in
+     * v0.1.21: at the old width it read as an apron). */
+    const val MUFFLER_H = 0.27f
+    const val MUFFLER_TOP = 0.305f
+    const val TOWEL_W = 0.38f
     const val TOWEL_TOP = 0.355f
 
     /** Mittens: height / body height, centered on each hand, the
@@ -531,16 +578,30 @@ object PersonAnchors {
 
     /** Parasol: width / body width; its top (above the person — the
      * pad in [PersonFigure.padTopRatio] makes the room); the shaft
-     * sits at this fraction of the asset's width and is stood on the
-     * right hand. */
+     * sits at this fraction of the asset's width (measured 0.508,
+     * not the 0.462 used until v0.1.20) and is stood on the right
+     * hand. The asset was re-cut in v0.1.21 without its J-hook: a
+     * drawn shaft — an outline pass in [PARASOL_SHAFT_EDGE], then a
+     * fill pass in [PARASOL_SHAFT_COLOR] — runs from the cut end
+     * down to the hand, because the asset's own shaft stopped about
+     * a tenth of the body height short of the hand. */
     const val PARASOL_W = 1.15f
-    const val PARASOL_TOP = -0.30f
-    const val PARASOL_SHAFT_X = 0.462f
+    const val PARASOL_TOP = -0.20f
+    const val PARASOL_SHAFT_X = 0.508f
+
+    /** Drawn parasol shaft width / asset width (the asset's own
+     * shaft measures 0.057), and its colors sampled from the asset
+     * (fill RGB (151, 201, 234); the outline is the family's ink). */
+    const val PARASOL_SHAFT_W = 0.057f
+    const val PARASOL_SHAFT_COLOR: Int = 0xFF97C9EA.toInt()
+    const val PARASOL_SHAFT_EDGE: Int = 0xFF1B2566.toInt()
 
     /** Fan: height / body height; its center offset right of the
-     * hand; its bottom (the handle's end) this far below the hand. */
+     * hand (0.05 since v0.1.21 — at 0.12 the handle, which sits at
+     * the asset's center, hung beside the hand instead of in it);
+     * its bottom (the handle's end) this far below the hand. */
     const val UCHIWA_H = 0.21f
-    const val UCHIWA_DX = 0.12f
+    const val UCHIWA_DX = 0.05f
     const val UCHIWA_BOTTOM_DY = 0.03f
 
     /** Code-drawn signs: sweat drops beside the head (x positions /
@@ -587,10 +648,11 @@ object PersonAnchors {
  * The given rect is the whole canvas: the person stands at its
  * bottom, shrunk by [PersonFigure.padTopRatio] so a parasol canopy
  * or a knit cap has room above the head, and centered horizontally.
- * On the hybrid portrait base the muffler and the shiver are baked
- * into the picture already, so those two are not drawn again. On
- * the raincoat base — a finished full-body picture — the neck,
- * mitten and sign layers are not drawn at all (v0.1.20).
+ * On the hybrid portrait bases (ranks 5 and 6) the muffler, the
+ * mittens and the shiver are baked into the picture already, so
+ * those are not drawn again. On the raincoat base — a finished
+ * full-body picture — the neck, mitten and sign layers are not
+ * drawn at all (v0.1.20).
  */
 object PersonComposer {
 
@@ -651,8 +713,10 @@ object PersonComposer {
         // ---- base ----
         val bl: Float
         val bw: Float
-        if (spec.base == PersonBase.RANK5_PORTRAIT) {
-            val person = bmp(ctx, PersonArt.RANK5)
+        if (spec.base == PersonBase.RANK5_PORTRAIT ||
+            spec.base == PersonBase.RANK6_PORTRAIT
+        ) {
+            val person = bmp(ctx, PersonCanvas.bodyArt(spec.base))
             bw = ph * person.width / person.height
             bl = left + (width - bw) / 2f
             canvas.drawBitmap(person, null, RectF(bl, pt, bl + bw, pt + ph), paint)
@@ -698,7 +762,8 @@ object PersonComposer {
         fun by(f: Float) = pt + f * ph
         val handX = bx(rig.handRx)
         val handY = by(rig.handRy)
-        val hybrid = spec.base == PersonBase.RANK5_PORTRAIT
+        val hybrid = spec.base == PersonBase.RANK5_PORTRAIT ||
+            spec.base == PersonBase.RANK6_PORTRAIT
         // The raincoat is a finished full-body picture (v0.1.20):
         // no neck / mitten / sign layers over it, whatever the spec
         // fields say — the guarantee lives here, not only in the
@@ -739,8 +804,9 @@ object PersonComposer {
             PersonNeck.NONE -> Unit
         }
 
-        // ---- mittens over the hands ----
-        if (spec.mittens && !raincoatBase) {
+        // ---- mittens over the hands (the portrait bases wear
+        //      theirs baked in) ----
+        if (spec.mittens && !raincoatBase && !hybrid) {
             val mh = PersonAnchors.MITTEN_H * ph
             for ((art, hx, hy) in listOf(
                 Triple(PersonArt.PROP_MITTEN_L, rig.handLx, rig.handLy),
@@ -772,11 +838,13 @@ object PersonComposer {
             PersonHead.NONE -> Unit
         }
 
-        // ---- face ----
+        // ---- face (placed from the measured feature lines,
+        //      v0.1.21: the sunglasses on the eye line, the mask
+        //      hanging just under it) ----
         if (spec.mask) {
             drawProp(
                 PersonArt.PROP_MASK, bx(rig.faceCx),
-                by(rig.faceTop + PersonAnchors.MASK_TOP * rig.faceH),
+                by(rig.eyeY + PersonAnchors.MASK_DROP),
                 PersonAnchors.MASK_W * rig.faceW * bw
             )
         }
@@ -784,7 +852,7 @@ object PersonComposer {
             val img = bmp(ctx, PersonArt.PROP_SUNGLASSES)
             val w = PersonAnchors.SUNG_W * rig.faceW * bw
             val h = w * img.height / img.width
-            val cy = by(rig.faceTop + PersonAnchors.SUNG_CY * rig.faceH)
+            val cy = by(rig.eyeY)
             canvas.drawBitmap(
                 img, null,
                 RectF(bx(rig.faceCx) - w / 2f, cy - h / 2f, bx(rig.faceCx) + w / 2f, cy + h / 2f),
@@ -828,6 +896,22 @@ object PersonComposer {
                 val uh = uw * img.height / img.width
                 val uLeft = handX - PersonAnchors.PARASOL_SHAFT_X * uw
                 val uTop = pt + PersonAnchors.PARASOL_TOP * ph
+                // The drawn shaft extension first (the asset's cut
+                // end covers its top): an outline pass, then the
+                // fill pass inside it, down to the hand (v0.1.21).
+                val shaftX = uLeft + PersonAnchors.PARASOL_SHAFT_X * uw
+                val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = PersonAnchors.PARASOL_SHAFT_EDGE
+                    strokeWidth = PersonAnchors.PARASOL_SHAFT_W * uw
+                    strokeCap = Paint.Cap.ROUND
+                }
+                canvas.drawLine(shaftX, uTop + uh, handX, handY, edge)
+                val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = PersonAnchors.PARASOL_SHAFT_COLOR
+                    strokeWidth = PersonAnchors.PARASOL_SHAFT_W * uw * 0.55f
+                    strokeCap = Paint.Cap.ROUND
+                }
+                canvas.drawLine(shaftX, uTop + uh, handX, handY, fill)
                 canvas.drawBitmap(img, null, RectF(uLeft, uTop, uLeft + uw, uTop + uh), paint)
             }
             PersonHeld.UCHIWA -> {

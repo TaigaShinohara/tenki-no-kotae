@@ -207,9 +207,11 @@ class PersonFigureTest {
         assertEquals(PersonBase.BODY_A to PersonTop.CARDIGAN, PersonFigure.outfitFor(2, false))
         assertEquals(PersonBase.BODY_A to PersonTop.LIGHT_OUTER, PersonFigure.outfitFor(3, false))
         assertEquals(PersonBase.BODY_A to PersonTop.KNIT_COAT, PersonFigure.outfitFor(4, false))
-        // Rank 5 is the hybrid: its v0.1.16 portrait, no top over it.
+        // Ranks 5 and 6 are the hybrids: their v0.1.16 portraits, no
+        // top over them (rank 6 joined in v0.1.21 — the down top is
+        // a closed product shot that hid the face).
         assertEquals(PersonBase.RANK5_PORTRAIT to null, PersonFigure.outfitFor(5, false))
-        assertEquals(PersonBase.BODY_C to PersonTop.DOWN, PersonFigure.outfitFor(6, false))
+        assertEquals(PersonBase.RANK6_PORTRAIT to null, PersonFigure.outfitFor(6, false))
         // The spec agrees with the outfit table.
         for (r in 0..6) {
             val s = spec19(r)
@@ -229,7 +231,7 @@ class PersonFigureTest {
         // folding day never brings the raincoat out.
         assertEquals(PersonBase.BODY_A, spec19(1, Rules.UmbrellaLevel.NEED).base)
         assertEquals(PersonBase.RANK5_PORTRAIT, spec19(5, Rules.UmbrellaLevel.NEED).base)
-        assertEquals(PersonBase.BODY_C, spec19(6, Rules.UmbrellaLevel.NEED).base)
+        assertEquals(PersonBase.RANK6_PORTRAIT, spec19(6, Rules.UmbrellaLevel.NEED).base)
         assertEquals(PersonBase.BODY_A, spec19(3, Rules.UmbrellaLevel.FOLDING).base)
     }
 
@@ -300,7 +302,9 @@ class PersonFigureTest {
     @Test fun padTop_followsTheTallestProp() {
         assertEquals(0.34f, PersonFigure.padTopRatio(spec19(2, uvMax = 8.0)), 0.001f)
         assertEquals(0.04f, PersonFigure.padTopRatio(spec19(3, snow = true)), 0.001f)
-        assertEquals(0f, PersonFigure.padTopRatio(spec19(3, uvMax = 7.0)), 0.001f)
+        // A cap day also pads a little since v0.1.21 (the dome
+        // rises past the hair now that the brim sits higher).
+        assertEquals(0.04f, PersonFigure.padTopRatio(spec19(3, uvMax = 7.0)), 0.001f)
         assertEquals(0f, PersonFigure.padTopRatio(spec19(3)), 0.001f)
     }
 
@@ -407,6 +411,45 @@ class PersonFigureTest {
         assertFalse(s.mittens)
     }
 
+    // ---- v0.1.21: the face stays visible ----
+
+    @Test fun faceAnchors_keepEyesAndMouthClear() {
+        // The v0.1.21 audit invariants, measured off the shipped
+        // pictures: the cap brim and the knit cap's band end above
+        // the eye line, the mask starts above the mouth, and the
+        // muffler's top band starts below it — on every base. (The
+        // portrait bases draw neither muffler nor mask from these
+        // anchors the same way, but the invariants are kept uniform
+        // so a hand-built spec cannot break them either.)
+        for (base in PersonBase.values()) {
+            val rig = PersonRigs.rig(base)
+            assertTrue("$base eye above mouth", rig.eyeY < rig.mouthY)
+            assertTrue(
+                "$base cap brim above eyes",
+                PersonAnchors.CAP_BOTTOM < rig.eyeY
+            )
+            assertTrue(
+                "$base knitcap band above eyes",
+                PersonAnchors.KNITCAP_BOTTOM < rig.eyeY
+            )
+            assertTrue(
+                "$base mask starts above the mouth",
+                rig.eyeY + PersonAnchors.MASK_DROP < rig.mouthY
+            )
+            assertTrue(
+                "$base muffler starts below the mouth",
+                PersonAnchors.MUFFLER_TOP > rig.mouthY
+            )
+        }
+    }
+
+    @Test fun padTopRatio_parasolStillBeatsTheCap() {
+        // Cap + parasol together: the parasol's tall pad wins.
+        val s = spec19(0, uvMax = 9.0).copy(held = PersonHeld.PARASOL)
+        assertEquals(PersonHead.CAP, s.head)
+        assertEquals(0.34f, PersonFigure.padTopRatio(s), 0.001f)
+    }
+
     @Test fun rigsAndCanvasBoxes_stayInRange() {
         for (base in PersonBase.values()) {
             val rig = PersonRigs.rig(base)
@@ -414,7 +457,8 @@ class PersonFigureTest {
             assertTrue("$base face", rig.faceTop < rig.faceBottom)
             for (v in listOf(
                 rig.faceCx, rig.faceTop, rig.faceBottom, rig.faceLeft, rig.faceRight,
-                rig.handRx, rig.handRy, rig.handLx, rig.handLy
+                rig.handRx, rig.handRy, rig.handLx, rig.handLy,
+                rig.eyeY, rig.mouthY
             )) {
                 assertTrue("$base rig value $v in range", v in 0f..1f)
             }
