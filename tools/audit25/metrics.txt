@@ -1,0 +1,18 @@
+== head layers (composer space, mirror_v0125) ==
+BODY_A          CAP      poke=0.093 bottom=0.397 (faceBottom 0.399) faceCx err=-0.0000 padTop=0.10
+BODY_A          KNITCAP  poke=0.087 bottom=0.398 (faceBottom 0.399) faceCx err=-0.0000 padTop=0.10
+BODY_B          CAP      poke=0.030 bottom=0.347 (faceBottom 0.337) faceCx err=+0.0000 padTop=0.04
+BODY_B          KNITCAP  poke=0.025 bottom=0.348 (faceBottom 0.337) faceCx err=+0.0000 padTop=0.03
+BODY_C          CAP      poke=0.030 bottom=0.347 (faceBottom 0.336) faceCx err=+0.0000 padTop=0.04
+BODY_C          KNITCAP  poke=0.025 bottom=0.348 (faceBottom 0.336) faceCx err=+0.0000 padTop=0.03
+RANK5_PORTRAIT  CAP      poke=0.030 bottom=0.347 (faceBottom 0.314) faceCx err=+0.0000 padTop=0.04
+RANK5_PORTRAIT  KNITCAP  poke=0.025 bottom=0.348 (faceBottom 0.314) faceCx err=+0.0000 padTop=0.03
+RANK6_PORTRAIT  CAP      poke=0.030 bottom=0.347 (faceBottom 0.330) faceCx err=+0.0000 padTop=0.04
+RANK6_PORTRAIT  KNITCAP  poke=0.025 bottom=0.348 (faceBottom 0.330) faceCx err=+0.0000 padTop=0.04
+RAINCOAT        CAP      poke=0.054 bottom=0.359 (faceBottom 0.336) faceCx err=+0.0000 padTop=0.06
+RAINCOAT        KNITCAP  poke=0.049 bottom=0.359 (faceBottom 0.336) faceCx err=+0.0000 padTop=0.06
+
+== layered tops (audit23 path, BODY_A) ==
+cardigan    hand survival 70.4/69.9 -> 70.4/69.9
+light outer hand survival 93.0/93.4 -> 98.2/96.8
+knit coat   hand survival 71.6/72.0 -> 66.3/66.3

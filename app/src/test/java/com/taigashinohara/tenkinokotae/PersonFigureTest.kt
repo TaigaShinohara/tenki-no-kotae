@@ -301,10 +301,11 @@ class PersonFigureTest {
 
     @Test fun padTop_followsTheTallestProp() {
         assertEquals(0.34f, PersonFigure.padTopRatio(spec19(2, uvMax = 8.0)), 0.001f)
-        assertEquals(0.04f, PersonFigure.padTopRatio(spec19(3, snow = true)), 0.001f)
-        // A cap day also pads a little since v0.1.21 (the dome
-        // rises past the hair now that the brim sits higher).
-        assertEquals(0.04f, PersonFigure.padTopRatio(spec19(3, uvMax = 7.0)), 0.001f)
+        // v0.1.25: the head layers are tall pictures (hair + hat),
+        // so the pad is the layer's measured poke over the person
+        // rect, per base — on BODY_A both layers poke ≈0.09.
+        assertEquals(0.10f, PersonFigure.padTopRatio(spec19(3, snow = true)), 0.001f)
+        assertEquals(0.10f, PersonFigure.padTopRatio(spec19(3, uvMax = 7.0)), 0.001f)
         assertEquals(0f, PersonFigure.padTopRatio(spec19(3)), 0.001f)
     }
 
@@ -415,23 +416,16 @@ class PersonFigureTest {
 
     @Test fun faceAnchors_keepEyesAndMouthClear() {
         // The v0.1.21 audit invariants, measured off the shipped
-        // pictures: the cap brim and the knit cap's band end above
-        // the eye line, the mask starts above the mouth, and the
+        // pictures: the mask starts above the mouth, and the
         // muffler's top band starts below it — on every base. (The
         // portrait bases draw neither muffler nor mask from these
         // anchors the same way, but the invariants are kept uniform
-        // so a hand-built spec cannot break them either.)
+        // so a hand-built spec cannot break them either.) The hats
+        // are head layers since v0.1.25 and carry their own face
+        // invariants — see headLayers_anchorTheFaceOntoTheRig.
         for (base in PersonBase.values()) {
             val rig = PersonRigs.rig(base)
             assertTrue("$base eye above mouth", rig.eyeY < rig.mouthY)
-            assertTrue(
-                "$base cap brim above eyes",
-                PersonAnchors.CAP_BOTTOM < rig.eyeY
-            )
-            assertTrue(
-                "$base knitcap band above eyes",
-                PersonAnchors.KNITCAP_BOTTOM < rig.eyeY
-            )
             assertTrue(
                 "$base mask starts above the mouth",
                 rig.eyeY + PersonAnchors.MASK_DROP < rig.mouthY
@@ -546,7 +540,9 @@ class PersonFigureTest {
         }
     }
 
-    // ---- v0.1.23: the tops fit the body, the hats sit on the hair ----
+    // ---- v0.1.23: the tops fit the body ----
+    // (the hats sat on the hair until v0.1.25 replaced them with
+    // head layers — the next section)
 
     @Test fun topHems_keepTheirWornLengths() {
         // The v0.1.23 fit pass, pinned per top: each drawn hem
@@ -605,39 +601,69 @@ class PersonFigureTest {
         assertTrue("DOWN drawn box width $downRatio", downRatio in 1.05f..1.20f)
     }
 
-    @Test fun hatPaintedBoxes_stayOnTheHair() {
-        // The v0.1.23 hat placement, pinned: the painted dome top
-        // must stay within the head pad (0.04 of the body height —
-        // padTop_followsTheTallestProp) on every base, so the hat
-        // is never clipped, and the painted bottom stays above the
-        // eye line (also asserted in faceAnchors_*). bw/ph per
-        // base: canvas bases from their boxes, the portraits from
-        // their asset pixel sizes (405×1024 / 448×1024).
-        val aspects = mapOf(
-            PersonBase.BODY_A to 0.3962f, PersonBase.BODY_B to 0.3976f,
-            PersonBase.BODY_C to 0.4494f, PersonBase.RAINCOAT to 0.3072f,
-            PersonBase.RANK5_PORTRAIT to 405f / 1024f,
-            PersonBase.RANK6_PORTRAIT to 448f / 1024f
-        )
-        // Painted height / painted width of each hat asset.
-        val capPHW = (0.927f - 0.175f) * 1024f / ((0.999f - 0.000f) * 795f)
-        val knitPHW = (0.999f - 0.000f) * 1024f / ((0.999f - 0.001f) * 934f)
-        for ((base, bwr) in aspects) {
-            val capTop = PersonAnchors.CAP_BOTTOM -
-                PersonAnchors.CAP_W * bwr * capPHW * PersonAnchors.CAP_HS
-            assertTrue("$base cap painted top $capTop", capTop >= -0.04f)
-            val knitTop = PersonAnchors.KNITCAP_BOTTOM -
-                PersonAnchors.KNITCAP_W * bwr * knitPHW * PersonAnchors.KNITCAP_HS
-            assertTrue("$base knitcap painted top $knitTop", knitTop >= -0.04f)
+    // ---- v0.1.25: the head layers anchor the face onto the rig ----
+
+    @Test fun headLayers_anchorTheFaceOntoTheRig() {
+        // The v0.1.25 head layers, pinned: each layer is a picture
+        // of the hair already wearing the hat, placed so ITS face
+        // lands on the rig's face — centre x and top aligned, the
+        // raincoat on the eye line instead (its rig face top is
+        // the hood opening). The layer must cover the rig's whole
+        // face box (it replaces the base's hair), and its poke
+        // over the person rect must fit the spec's pad.
+        // bw/ph per base come from PersonCanvas.bodyAspect.
+        for (base in PersonBase.values()) {
+            val rig = PersonRigs.rig(base)
+            val bw = PersonCanvas.bodyAspect(base) * 1000f
+            val ph = 1000f
+            val eyeAnchored = base == PersonBase.RAINCOAT
+            for (head in listOf(PersonHead.CAP, PersonHead.KNITCAP)) {
+                val face = PersonAnchors.headFace(head)
+                val r = PersonAnchors.headLayerRect(
+                    head, rig, eyeAnchored, 0f, 0f, bw, ph
+                )
+                val faceCx = r[0] + (face[0] + face[2]) / 2f * r[2]
+                assertEquals(
+                    "$base $head face centre x", rig.faceCx * bw, faceCx, 1.5f
+                )
+                if (eyeAnchored) {
+                    val eye = r[1] + PersonAnchors.headEye(head) * r[3]
+                    assertEquals(
+                        "$base $head eye line", rig.eyeY * ph, eye, 1.5f
+                    )
+                } else {
+                    val faceTop = r[1] + face[1] * r[3]
+                    assertEquals(
+                        "$base $head face top", rig.faceTop * ph, faceTop, 1.5f
+                    )
+                }
+                assertTrue(
+                    "$base $head covers the face box",
+                    r[0] < rig.faceLeft * bw &&
+                        r[0] + r[2] > rig.faceRight * bw &&
+                        // The layer's hair ends at the chin band:
+                        // on BODY_A it lands within 0.002 of the
+                        // rig's chin, so the band gets 0.01 of slack.
+                        r[1] + r[3] > rig.faceBottom * ph - 0.01f * ph
+                )
+                val poke = maxOf(0f, -r[1] / ph)
+                val spec = spec19(3).copy(base = base, head = head)
+                assertTrue(
+                    "$base $head poke $poke within pad",
+                    poke <= PersonFigure.padTopRatio(spec) + 0.001f
+                )
+            }
         }
-        // The anchors themselves stay in their fitted bands.
-        assertTrue(PersonAnchors.CAP_W in 0.58f..0.66f)
-        assertTrue(PersonAnchors.KNITCAP_W in 0.62f..0.70f)
-        assertTrue(PersonAnchors.CAP_HS in 0.80f..0.90f)
-        assertTrue(PersonAnchors.KNITCAP_HS in 0.67f..0.77f)
-        for (p in listOf(PersonAnchors.CAP_PAINT, PersonAnchors.KNITCAP_PAINT)) {
-            assertTrue(p[0] < p[2] && p[1] < p[3])
-            assertTrue(p.all { it in 0f..1f })
+        // The layer anchors themselves stay as measured.
+        assertEquals(975, PersonAnchors.HEAD_CAP_PX_W)
+        assertEquals(728, PersonAnchors.HEAD_CAP_PX_H)
+        assertEquals(769, PersonAnchors.HEAD_KNIT_PX_W)
+        assertEquals(722, PersonAnchors.HEAD_KNIT_PX_H)
+        for (head in listOf(PersonHead.CAP, PersonHead.KNITCAP)) {
+            val f = PersonAnchors.headFace(head)
+            assertTrue(f[0] < f[2] && f[1] < f[3])
+            assertTrue(f.all { it in 0f..1f })
+            assertTrue(PersonAnchors.headEye(head) in 0.60f..0.70f)
         }
     }
 

@@ -8,6 +8,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.view.View
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 /**
@@ -51,6 +52,26 @@ import kotlin.math.roundToInt
  * lands its collar at the neck base, verified on 3× zoom crops of
  * the neckline for all six tops. The sweat drops move up and inward
  * onto the hair (they hung beside the cheeks like earrings).
+ *
+ * v0.1.25 (docs/FEATURE_v0.1.25.md) changes how the head is drawn,
+ * at the user's direction (「帽子などのかぶり物は髪型とセットで画
+ * 像にしてほしい」): the cap and the knit cap are no longer
+ * standalone props laid over the hair — each is a HEAD LAYER, a
+ * generated picture of the hair already wearing the hat, laid over
+ * the base so its face lands on the rig's face (scale from the
+ * face width, centre x and top aligned; the raincoat base anchors
+ * on the eye line instead — its rig face top is the hood opening,
+ * not the forehead). The head layer replaces the base's hair
+ * wholesale, so the hat can no longer sit off the hair it was
+ * floating on. The same pass re-fits the two open-front outers
+ * (the layered ranks the user still found off — 「まだ少しズレて
+ * る」): their silhouettes sat inside the body's at the shoulder
+ * rows; [PersonCanvas.topCal] widens them (sx only). The held
+ * items keep the v0.1.22 grip-point drawing — a matching
+ * arm-layer set was generated and measured but is NOT shipped:
+ * whether a generic bare arm should serve every outfit is the
+ * user's open question, so the arm layers wait in
+ * tools/layers_keyed/, unused.
  *
  * v0.1.21 (docs/FIX_v0.1.21.md) extends the hybrid call to rank 6:
  * the down top is a closed-collar product shot with no face opening
@@ -108,7 +129,8 @@ enum class PersonArt {
     BODY_A, BODY_B, BODY_C,
     TOP_TSHIRT, TOP_SHIRT, TOP_CARDIGAN, TOP_LIGHTOUTER, TOP_KNITCOAT, TOP_DOWN,
     OUTFIT_RAINCOAT,
-    PROP_CAP, PROP_KNITCAP, PROP_MASK, PROP_SUNGLASSES, PROP_MUFFLER,
+    LAYER_HEAD_CAP, LAYER_HEAD_KNITCAP,
+    PROP_MASK, PROP_SUNGLASSES, PROP_MUFFLER,
     PROP_MITTEN_L, PROP_MITTEN_R, PROP_TOWEL, PROP_PARASOL, PROP_UCHIWA,
     PROP_FOLDING
 }
@@ -309,17 +331,21 @@ object PersonFigure {
     /**
      * How much headroom above the person the composition needs, as a
      * fraction of the person's height: the parasol's canopy rides
-     * well above the head, the knit cap pokes a little past the
-     * hair. [PersonComposer] shrinks the person into the given rect
-     * by this much; callers sizing a view for a known person height
-     * multiply by (1 + padTopRatio).
+     * well above the head (0.34, the standing rule since v0.1.19),
+     * and a head layer (v0.1.25) pokes above the person top by a
+     * measured amount per base — its dome stands taller than the
+     * hair it replaces — so the pad covers that base's poke,
+     * rounded up to the next 0.01. [PersonComposer] shrinks the
+     * person into the given rect by this much; callers sizing a
+     * view for a known person height multiply by (1 + padTopRatio).
      */
-    fun padTopRatio(spec: PersonSpec): Float = when {
-        spec.held == PersonHeld.PARASOL -> 0.34f
-        spec.head == PersonHead.KNITCAP -> 0.04f
-        // The cap's dome rises a little past the hair (v0.1.21).
-        spec.head == PersonHead.CAP -> 0.04f
-        else -> 0f
+    fun padTopRatio(spec: PersonSpec): Float {
+        var pad = if (spec.held == PersonHeld.PARASOL) 0.34f else 0f
+        if (spec.head != PersonHead.NONE) {
+            val poke = PersonAnchors.headLayerPoke(spec.base, spec.head)
+            pad = maxOf(pad, ceil((poke + 0.005f) * 100f) / 100f)
+        }
+        return pad
     }
 
     // ---- Home size of the person (v0.1.18) ----
@@ -420,6 +446,20 @@ object PersonCanvas {
         PersonBase.RANK6_PORTRAIT -> PersonArt.RANK6
     }
 
+    /** Drawn body width / height for a base (v0.1.25): the canvas
+     * bases from their boxes, the portraits from their measured
+     * asset pixel sizes (405×1024 / 448×1024). The head layer's
+     * geometry is solved in these units (see
+     * [PersonAnchors.headLayerRect]). */
+    fun bodyAspect(base: PersonBase): Float = when (base) {
+        PersonBase.RANK5_PORTRAIT -> 405f / 1024f
+        PersonBase.RANK6_PORTRAIT -> 448f / 1024f
+        else -> {
+            val b = box(bodyArt(base))
+            (b[2] - b[0]) * W / ((b[3] - b[1]) * H)
+        }
+    }
+
     fun topArt(top: PersonTop): PersonArt = when (top) {
         PersonTop.TSHIRT -> PersonArt.TOP_TSHIRT
         PersonTop.SHIRT -> PersonArt.TOP_SHIRT
@@ -465,13 +505,30 @@ object PersonCanvas {
      * neck-base band (0.318–0.323 after the shift; the pinned
      * band is 0.315–0.355), the hems keep their v0.1.23
      * worn-length bands, and the raised cuffs only free more of
-     * the hands. Verified on enlarged crops (tools/audit24/). */
+     * the hands. Verified on enlarged crops (tools/audit24/).
+     *
+     * v0.1.25 widens the two open-front outers (sx only — the
+     * vertical solve above is untouched). Measured per row, the
+     * light outer's and the knit coat's silhouettes sat INSIDE
+     * the body's at the shoulder rows (width excess at rows
+     * 0.36–0.40: light outer −0.049/−0.039/−0.032, knit coat
+     * −0.051/−0.033/−0.020), so the body's own shoulder line
+     * rimmed the garment and the baked-in inner shirt dominated
+     * the chest — the user's 「まだ少しズレてる」 on the layered
+     * ranks. The cardigan already tracked the body (±0.01) and
+     * is unchanged. After the widening: light outer
+     * −0.011/−0.005/+0.004, knit coat −0.035/−0.019/−0.004
+     * (its A-line asset trades the rest against hand survival,
+     * 71.6→66.3 on the audit path); collars and hems are exactly
+     * where v0.1.24 put them. The record is
+     * docs/FEATURE_v0.1.25.md; verified on enlarged crops
+     * (tools/audit25/). */
     fun topCal(top: PersonTop): FloatArray = when (top) {
         PersonTop.TSHIRT -> floatArrayOf(0.70f, 0.875f, 0f, 0.028f)
         PersonTop.SHIRT -> floatArrayOf(0.80f, 0.80f, 0f, 0.014f)
         PersonTop.CARDIGAN -> floatArrayOf(0.55f, 0.45f, 0f, -0.003f)
-        PersonTop.LIGHT_OUTER -> floatArrayOf(0.60f, 0.625f, 0f, 0.004f)
-        PersonTop.KNIT_COAT -> floatArrayOf(0.65f, 0.60f, 0f, 0.011f)
+        PersonTop.LIGHT_OUTER -> floatArrayOf(0.63f, 0.625f, 0f, 0.000f)
+        PersonTop.KNIT_COAT -> floatArrayOf(0.67f, 0.60f, 0f, 0.011f)
         PersonTop.DOWN -> floatArrayOf(1.0f, 0.575f, 0f, 0.005f)
     }
 }
@@ -595,30 +652,106 @@ object PersonAnchors {
 
     // ---- v0.1.19 prop anchors (fractions of the body rect) ----
 
-    /** Cap / knit cap (v0.1.23: placed by the PAINTED box, not the
-     * asset rect). *_W is the painted width / body width, *_BOTTOM
-     * the painted bottom line (the brim's / the band's lower edge),
-     * *_HS a height scale, and *_PAINT the painted box inside the
-     * asset (asset fractions, measured from the shipped PNGs: the
-     * cap carries wide transparent margins, the knit cap fills its
-     * frame). Until v0.1.22 the hats were placed by the asset rect
-     * at 0.45 / 0.52 of the body width: against the hair cloud —
-     * ≈0.95 of the body width at that height — they read as small
-     * objects floating on top of the hair, the dome poking above
-     * the hairline at the centre while the hair spilled out above
-     * the dome's sides. The new widths (0.62 / 0.66) let the dome
-     * follow the hair cloud, the height scales (0.85 / 0.72)
-     * flatten the tall generated domes onto it, and the painted
-     * bottoms stay just above the measured eye line (0.216), as
-     * they have since v0.1.21. */
-    const val CAP_W = 0.62f
-    const val CAP_BOTTOM = 0.195f
-    const val CAP_HS = 0.85f
-    val CAP_PAINT = floatArrayOf(0.000f, 0.175f, 0.999f, 0.927f)
-    const val KNITCAP_W = 0.66f
-    const val KNITCAP_BOTTOM = 0.205f
-    const val KNITCAP_HS = 0.72f
-    val KNITCAP_PAINT = floatArrayOf(0.001f, 0.000f, 0.999f, 0.999f)
+    // ---- v0.1.25 head layers: hair + hat as ONE picture ----
+
+    /** Pixel sizes of the head-layer assets (measured from the
+     * shipped PNGs, keyed by tools/key_layers.py). */
+    const val HEAD_CAP_PX_W = 975
+    const val HEAD_CAP_PX_H = 728
+    const val HEAD_KNIT_PX_W = 769
+    const val HEAD_KNIT_PX_H = 722
+
+    /** The face box inside each head layer, (left, top, right,
+     * bottom) in asset fractions: by eye from the keyed PNGs in
+     * tools/preview_layers.py (the placement source of truth),
+     * cross-checked against the layers' ink clusters in
+     * tools/measure25.py — the eyes sit at (0.433 / 0.568, 0.654)
+     * in the cap layer and (0.414 / 0.584, 0.650) in the knit cap
+     * layer, symmetric about each box's centre x. */
+    val HEAD_CAP_FACE = floatArrayOf(0.349f, 0.557f, 0.650f, 0.975f)
+    val HEAD_KNIT_FACE = floatArrayOf(0.306f, 0.550f, 0.689f, 1.000f)
+
+    /** The eye line inside each head layer (asset fraction; the
+     * measured ink-cluster centroids above). Only the raincoat
+     * base anchors on it — see [headLayerRect]. */
+    const val HEAD_CAP_EYE = 0.654f
+    const val HEAD_KNIT_EYE = 0.650f
+
+    /** The layer's measured face box (see HEAD_CAP_FACE). */
+    fun headFace(head: PersonHead): FloatArray = when (head) {
+        PersonHead.CAP -> HEAD_CAP_FACE
+        PersonHead.KNITCAP -> HEAD_KNIT_FACE
+        PersonHead.NONE -> HEAD_CAP_FACE
+    }
+
+    /** The layer's measured eye line (see HEAD_CAP_EYE). */
+    fun headEye(head: PersonHead): Float = when (head) {
+        PersonHead.CAP -> HEAD_CAP_EYE
+        PersonHead.KNITCAP -> HEAD_KNIT_EYE
+        PersonHead.NONE -> HEAD_CAP_EYE
+    }
+
+    /**
+     * Where a head layer lands: (left, top, width, height) in the
+     * person rect's units ((bl, pt) its top-left, bw × ph its
+     * size). The scale is uniform, set by the face width — the
+     * layer's face is drawn at the rig's face width — and the
+     * face's centre x and top land on the rig's, so the layer's
+     * hair + hat replace the base's hair wholesale (the Python
+     * previews measured the base hair under it at 0.88–1.00
+     * covered). The one exception is the RAINCOAT base: its rig
+     * face top (0.081) is the top of the hood opening, not the
+     * forehead, and the layer's face is much shorter than the
+     * hood box — anchoring on the top would float the layer's
+     * eyes ≈0.09 of the height above the hood's own eye line.
+     * There the layer's eye line lands on the rig's eye line
+     * instead (the previews never covered the raincoat; measured
+     * in tools/measure25.py, the record is
+     * docs/FEATURE_v0.1.25.md). Pure math, unit-tested.
+     */
+    fun headLayerRect(
+        head: PersonHead, rig: PersonRig, eyeAnchored: Boolean,
+        bl: Float, pt: Float, bw: Float, ph: Float
+    ): FloatArray {
+        val iw: Int
+        val ih: Int
+        val face: FloatArray
+        val eye: Float
+        when (head) {
+            PersonHead.CAP -> {
+                iw = HEAD_CAP_PX_W; ih = HEAD_CAP_PX_H
+                face = HEAD_CAP_FACE; eye = HEAD_CAP_EYE
+            }
+            PersonHead.KNITCAP -> {
+                iw = HEAD_KNIT_PX_W; ih = HEAD_KNIT_PX_H
+                face = HEAD_KNIT_FACE; eye = HEAD_KNIT_EYE
+            }
+            PersonHead.NONE -> return floatArrayOf(bl, pt, 0f, 0f)
+        }
+        val scale = rig.faceW * bw / ((face[2] - face[0]) * iw)
+        val w = iw * scale
+        val h = ih * scale
+        val left = bl + rig.faceCx * bw - (face[0] + face[2]) / 2f * w
+        val top = if (eyeAnchored) {
+            pt + rig.eyeY * ph - eye * h
+        } else {
+            pt + rig.faceTop * ph - face[1] * h
+        }
+        return floatArrayOf(left, top, w, h)
+    }
+
+    /** How far a head layer pokes above the person top, as a
+     * fraction of the person height (0 when the head is bare):
+     * [headLayerRect] solved on a unit person rect of the base's
+     * own aspect. [PersonFigure.padTopRatio] pads by this. */
+    fun headLayerPoke(base: PersonBase, head: PersonHead): Float {
+        if (head == PersonHead.NONE) return 0f
+        val r = headLayerRect(
+            head, PersonRigs.rig(base), base == PersonBase.RAINCOAT,
+            0f, 0f, PersonCanvas.bodyAspect(base), 1f
+        )
+        return maxOf(0f, -r[1])
+    }
 
     /** Mask (v0.1.24: placed by its CLOTH box, like the hats).
      * [MASK_W] is the cloth width / cheek width
@@ -809,8 +942,8 @@ object PersonComposer {
         PersonArt.TOP_KNITCOAT -> R.drawable.top_knitcoat
         PersonArt.TOP_DOWN -> R.drawable.top_down
         PersonArt.OUTFIT_RAINCOAT -> R.drawable.outfit_raincoat
-        PersonArt.PROP_CAP -> R.drawable.prop_cap
-        PersonArt.PROP_KNITCAP -> R.drawable.prop_knitcap
+        PersonArt.LAYER_HEAD_CAP -> R.drawable.layer_head_cap
+        PersonArt.LAYER_HEAD_KNITCAP -> R.drawable.layer_head_knitcap
         PersonArt.PROP_MASK -> R.drawable.prop_mask
         PersonArt.PROP_SUNGLASSES -> R.drawable.prop_sunglasses
         PersonArt.PROP_MUFFLER -> R.drawable.prop_muffler
@@ -901,23 +1034,6 @@ object PersonComposer {
         // Head, face and held layers still go over it as usual.
         val raincoatBase = spec.base == PersonBase.RAINCOAT
 
-        /** A hat placed by its PAINTED box (v0.1.23): the painted
-         * width and the painted bottom line are the anchors, the
-         * dome flattened by the height scale — see [PersonAnchors].
-         * [paintBox] is (x0, y0, x1, y1) of the painted box inside
-         * the asset, in asset fractions. */
-        fun drawHat(
-            art: PersonArt, cx: Float, bottomY: Float,
-            paintW: Float, hs: Float, paintBox: FloatArray
-        ) {
-            val img = bmp(ctx, art)
-            val rectW = paintW / (paintBox[2] - paintBox[0])
-            val rectH = rectW * img.height / img.width * hs
-            val left = cx - (paintBox[0] + paintBox[2]) / 2f * rectW
-            val top = bottomY - paintBox[3] * rectH
-            canvas.drawBitmap(img, null, RectF(left, top, left + rectW, top + rectH), paint)
-        }
-
         // ---- neck (the portrait base wears its muffler baked in;
         //      the raincoat base takes no neck layer at all) ----
         if (!raincoatBase) when (spec.neck) {
@@ -971,18 +1087,28 @@ object PersonComposer {
             }
         }
 
-        // ---- head ----
-        when (spec.head) {
-            PersonHead.CAP -> drawHat(
-                PersonArt.PROP_CAP, bx(rig.faceCx), by(PersonAnchors.CAP_BOTTOM),
-                PersonAnchors.CAP_W * bw, PersonAnchors.CAP_HS, PersonAnchors.CAP_PAINT
+        // ---- head (v0.1.25: hair + hat as ONE picture — the head
+        //      layer replaces the base's hair wholesale, its face
+        //      anchored onto the rig's; see
+        //      [PersonAnchors.headLayerRect]. The standalone cap /
+        //      knit cap props are retired: laid over the hair
+        //      separately they kept sitting slightly off it, so
+        //      the hat now arrives already worn) ----
+        if (spec.head != PersonHead.NONE) {
+            val art = if (spec.head == PersonHead.CAP) {
+                PersonArt.LAYER_HEAD_CAP
+            } else {
+                PersonArt.LAYER_HEAD_KNITCAP
+            }
+            val img = bmp(ctx, art)
+            val r = PersonAnchors.headLayerRect(
+                spec.head, rig, spec.base == PersonBase.RAINCOAT,
+                bl, pt, bw, ph
             )
-            PersonHead.KNITCAP -> drawHat(
-                PersonArt.PROP_KNITCAP, bx(rig.faceCx), by(PersonAnchors.KNITCAP_BOTTOM),
-                PersonAnchors.KNITCAP_W * bw, PersonAnchors.KNITCAP_HS,
-                PersonAnchors.KNITCAP_PAINT
+            canvas.drawBitmap(
+                img, null,
+                RectF(r[0], r[1], r[0] + r[2], r[1] + r[3]), paint
             )
-            PersonHead.NONE -> Unit
         }
 
         // ---- face (placed from the measured feature lines,
