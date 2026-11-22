@@ -982,7 +982,13 @@ object PersonAnchors {
 
     /** Fan: height / body height, placed by its grip point
      * (v0.1.22): the handle's middle — measured at (0.502, 0.90) of
-     * the asset; the handle spans y 0.79–1.00 at x ≈ 0.50.
+     * the asset; the handle spans y 0.77–1.00 at x ≈ 0.50.
+     *
+     * v0.1.31 redrew the asset's picture only (the light-blue disc
+     * the colour of the shirts read as a balloon): a near-white
+     * uchiwa silhouette with the bones radiating from the root —
+     * same canvas, same grip point, same handle span, so every
+     * number below is unchanged (tools/audit31/draw_uchiwa.py).
      *
      * v0.1.30 placement (solved numerically in tools/audit30/):
      * the grip point rides [UCHIWA_DX] body widths OUTWARD of the
@@ -1118,6 +1124,11 @@ object PersonAnchors {
         // open umbrella's anchor verbatim. The v0.1.28 redraw
         // (edit-generated from the app's composite; its canopy
         // sat off-centre) is retired.
+        // v0.1.31: rebuilt by tools/audit31/make_parasol_layer31.py
+        // under the same rule, with the proof made explicit — the
+        // result's alpha is asserted equal to the rain umbrella's
+        // (0 px either way; parasol_silhouette_overlay.png shows
+        // one purple shape, no fringe).
         PersonArt.ARM_POLO_PARASOL ->
             ArmAnchor(0.83f, 0.84f, 0.815f, 1.20f, 0.95f, 0f)
         PersonArt.ARM_POLO_UCHIWA ->
