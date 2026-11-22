@@ -1093,13 +1093,16 @@ object PersonAnchors {
     /** Pixel sizes of the arm-layer assets (measured from the
      * shipped PNGs, keyed in tools/sleeve_arms/). */
     fun armPx(art: PersonArt): Pair<Int, Int> = when (art) {
-        PersonArt.ARM_POLO_OPEN -> 626 to 1024
+        // v0.1.32: the three OPEN layers (and the parasol) were
+        // re-canvassed wider for the redrawn centred canopy —
+        // polo/parasol 720, cardigan 746, knitcoat 655.
+        PersonArt.ARM_POLO_OPEN -> 720 to 1024
         PersonArt.ARM_POLO_FOLDING -> 290 to 1024
-        PersonArt.ARM_POLO_PARASOL -> 626 to 1024
+        PersonArt.ARM_POLO_PARASOL -> 720 to 1024
         PersonArt.ARM_POLO_UCHIWA -> 379 to 487
-        PersonArt.ARM_CARDIGAN_OPEN -> 626 to 1024
+        PersonArt.ARM_CARDIGAN_OPEN -> 746 to 1024
         PersonArt.ARM_CARDIGAN_FOLDING -> 283 to 1024
-        PersonArt.ARM_KNITCOAT_OPEN -> 625 to 1024
+        PersonArt.ARM_KNITCOAT_OPEN -> 655 to 1024
         PersonArt.ARM_KNITCOAT_FOLDING -> 282 to 1024
         else -> 1 to 1
     }
@@ -1110,8 +1113,18 @@ object PersonAnchors {
      * whose composites were verified by eye before the batch was
      * adopted. */
     fun armAnchor(art: PersonArt): ArmAnchor = when (art) {
+        // v0.1.32: the open canopies were redrawn in code
+        // (tools/audit32/draw_canopy32.py) after the user's call
+        // to rebuild the composition — apex over the head centre,
+        // canopy fully inside the frame, shaft one straight line
+        // from the apex into the fist's measured join point; the
+        // fist / arm / sleeve pixels are the batch's, untouched.
+        // The anchors below are solved from the new pictures so
+        // the grip lands exactly where it did before (the joins
+        // are unchanged), and the parasol takes the rain layer's
+        // anchor verbatim as always.
         PersonArt.ARM_POLO_OPEN ->
-            ArmAnchor(0.83f, 0.84f, 0.815f, 1.20f, 0.95f, 0f)
+            ArmAnchor(0.72164f, 0.84f, 0.70860f, 1.38003f, 0.95f, 0f)
         PersonArt.ARM_POLO_FOLDING ->
             ArmAnchor(0.40f, 0.40f, null, null, 0.70f, 12f)
         // v0.1.30: the parasol picture is the APPROVED rain
@@ -1129,16 +1142,19 @@ object PersonAnchors {
         // result's alpha is asserted equal to the rain umbrella's
         // (0 px either way; parasol_silhouette_overlay.png shows
         // one purple shape, no fringe).
+        // v0.1.32: rebuilt again by
+        // tools/audit32/make_parasol_layer32.py from the redrawn
+        // rain layer, same rule, alpha asserted identical.
         PersonArt.ARM_POLO_PARASOL ->
-            ArmAnchor(0.83f, 0.84f, 0.815f, 1.20f, 0.95f, 0f)
+            ArmAnchor(0.72164f, 0.84f, 0.70860f, 1.38003f, 0.95f, 0f)
         PersonArt.ARM_POLO_UCHIWA ->
             ArmAnchor(0.235f, 0.842f, null, 0.690f, 0.351f, 0f)
         PersonArt.ARM_CARDIGAN_OPEN ->
-            ArmAnchor(0.57f, 0.84f, 0.545f, 1.20f, 0.95f, 0f)
+            ArmAnchor(0.58555f, 0.84f, 0.56458f, 1.43003f, 0.95f, 0f)
         PersonArt.ARM_CARDIGAN_FOLDING ->
             ArmAnchor(0.42f, 0.40f, null, null, 0.70f, 24f)
         PersonArt.ARM_KNITCOAT_OPEN ->
-            ArmAnchor(0.79f, 0.85f, 0.775f, 1.20f, 0.95f, 0f)
+            ArmAnchor(0.75382f, 0.85f, 0.73950f, 1.2576f, 0.95f, 0f)
         PersonArt.ARM_KNITCOAT_FOLDING ->
             ArmAnchor(0.42f, 0.40f, null, null, 0.70f, 24f)
         else -> ArmAnchor(0.5f, 0.5f, null, null, 0f, 0f)

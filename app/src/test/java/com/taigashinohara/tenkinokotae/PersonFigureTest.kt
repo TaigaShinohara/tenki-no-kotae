@@ -565,15 +565,47 @@ class PersonFigureTest {
             }
         }
         // The shipped pixel sizes stay as measured.
-        assertEquals(626 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_OPEN))
+        // v0.1.32: the OPEN layers were re-canvassed wider for
+        // the redrawn centred canopy (polo/parasol 720, cardigan
+        // 746, knitcoat 655); the folding frames are untouched.
+        assertEquals(720 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_OPEN))
+        assertEquals(746 to 1024, PersonAnchors.armPx(PersonArt.ARM_CARDIGAN_OPEN))
+        assertEquals(655 to 1024, PersonAnchors.armPx(PersonArt.ARM_KNITCOAT_OPEN))
         assertEquals(283 to 1024, PersonAnchors.armPx(PersonArt.ARM_CARDIGAN_FOLDING))
         assertEquals(282 to 1024, PersonAnchors.armPx(PersonArt.ARM_KNITCOAT_FOLDING))
         // v0.1.30: the parasol picture is the rain umbrella's
-        // own frame (626×1024) with only its canopy repainted.
+        // own frame (720×1024 since v0.1.32) with only its
+        // canopy repainted.
         // The v0.1.28 fan picture keeps its frame as a record —
         // its arm layer is retired (the prop + patch serves).
         assertEquals(379 to 487, PersonAnchors.armPx(PersonArt.ARM_POLO_UCHIWA))
-        assertEquals(626 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_PARASOL))
+        assertEquals(720 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_PARASOL))
+    }
+
+    @Test fun v0132_centeredCanopyNumbers_stayPinned() {
+        // The v0.1.32 canopy rebuild (tools/audit32/): the
+        // anchors were re-solved on the redrawn pictures so the
+        // grip and the shaft's join land exactly where the old
+        // pictures put them, while the canopy — drawn wider
+        // (dwFrac up from 1.20) — centres its apex on the head.
+        val polo = PersonAnchors.armAnchor(PersonArt.ARM_POLO_OPEN)
+        assertEquals(0.72164f, polo.gripX, 0.00001f)
+        assertEquals(0.84f, polo.gripY, 0.00001f)
+        assertEquals(0.70860f, polo.shaftX!!, 0.00001f)
+        assertEquals(1.38003f, polo.dwFrac!!, 0.00001f)
+        assertEquals(0.95f, polo.dhFrac, 0.00001f)
+        val cardigan = PersonAnchors.armAnchor(PersonArt.ARM_CARDIGAN_OPEN)
+        assertEquals(0.58555f, cardigan.gripX, 0.00001f)
+        assertEquals(0.56458f, cardigan.shaftX!!, 0.00001f)
+        assertEquals(1.43003f, cardigan.dwFrac!!, 0.00001f)
+        val knit = PersonAnchors.armAnchor(PersonArt.ARM_KNITCOAT_OPEN)
+        assertEquals(0.75382f, knit.gripX, 0.00001f)
+        assertEquals(0.85f, knit.gripY, 0.00001f)
+        assertEquals(0.73950f, knit.shaftX!!, 0.00001f)
+        assertEquals(1.2576f, knit.dwFrac!!, 0.00001f)
+        // The parasol still takes the rain layer's anchor
+        // verbatim (the v0.1.30 rule, re-proven in v0.1.32).
+        assertEquals(polo, PersonAnchors.armAnchor(PersonArt.ARM_POLO_PARASOL))
     }
 
     @Test fun v0127_auditFixNumbers_stayPinned() {
