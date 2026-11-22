@@ -458,7 +458,7 @@ class PersonFigureTest {
             for (v in listOf(
                 rig.faceCx, rig.faceTop, rig.faceBottom, rig.faceLeft, rig.faceRight,
                 rig.handRx, rig.handRy, rig.handLx, rig.handLy,
-                rig.eyeY, rig.mouthY
+                rig.eyeY, rig.mouthY, rig.cheekW
             )) {
                 assertTrue("$base rig value $v in range", v in 0f..1f)
             }
@@ -648,5 +648,46 @@ class PersonFigureTest {
         assertTrue(PersonAnchors.SWEAT_X1 in 0.17f..0.22f)
         assertTrue(PersonAnchors.SWEAT_X2 in 0.80f..0.85f)
         assertTrue(PersonAnchors.SWEAT_Y < 0.30f)
+    }
+
+    // ---- v0.1.24: the towel wraps the neck, the mask fits the face ----
+
+    @Test fun towelWrapsTheNeck_notTheChest() {
+        // The v0.1.24 towel, pinned: the band's top sits at the
+        // neck — at or above the muffler's top (0.305) and below
+        // the mouth — and the panels end on the upper chest. Until
+        // v0.1.23 the top was 0.355 (below the neck base) and the
+        // panels hung to 0.57–0.60 like an apron.
+        assertTrue(PersonAnchors.TOWEL_TOP in 0.29f..0.31f)
+        assertTrue(PersonAnchors.TOWEL_TOP <= PersonAnchors.MUFFLER_TOP)
+        assertTrue(PersonAnchors.TOWEL_TOP > 0.261f)
+        assertTrue(PersonAnchors.TOWEL_H in 0.20f..0.22f)
+        val bottom = PersonAnchors.TOWEL_TOP + PersonAnchors.TOWEL_H
+        assertTrue("towel bottom $bottom", bottom in 0.50f..0.52f)
+    }
+
+    @Test fun maskCloth_landsOnTheChin() {
+        // The v0.1.24 mask, pinned: on every base the cloth starts
+        // at the nose bridge (eye line + DROP, above the mouth —
+        // also asserted in faceAnchors_*) and ends at ≈0.304, a
+        // wrap under the measured jaw line (≈0.287 family-wide)
+        // and clear of the muffler below it. The cloth spans the
+        // measured cheeks (MASK_W × cheekW), not the wider rig
+        // face box. Until v0.1.23 the cloth bottom ran to
+        // 0.337–0.368 — into the muffler on the portraits.
+        for (base in PersonBase.values()) {
+            val rig = PersonRigs.rig(base)
+            val top = rig.eyeY + PersonAnchors.MASK_DROP
+            val bottom = top + PersonAnchors.MASK_H
+            assertTrue("$base mask bottom $bottom", bottom in 0.295f..0.315f)
+            assertTrue("$base cheekW ${rig.cheekW}", rig.cheekW in 0.30f..0.48f)
+            val clothW = PersonAnchors.MASK_W * rig.cheekW
+            assertTrue("$base mask cloth width $clothW", clothW in 0.31f..0.48f)
+        }
+        assertTrue(PersonAnchors.MASK_W in 0.98f..1.06f)
+        assertTrue(PersonAnchors.MASK_H in 0.064f..0.072f)
+        val p = PersonAnchors.MASK_PAINT
+        assertTrue(p[0] < p[2] && p[1] < p[3])
+        assertTrue(p.all { it in 0f..1f })
     }
 }

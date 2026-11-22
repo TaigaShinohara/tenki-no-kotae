@@ -451,14 +451,28 @@ object PersonCanvas {
      * Survival after the fix, measured on the shipped assets:
      * polo 91–97%, shirt 81%, cardigan 37%, light outer 65–67%,
      * knit coat 47%, down 99%. Verified on enlarged crops
-     * (tools/audit23/) and pinned by unit tests. */
+     * (tools/audit23/) and pinned by unit tests.
+     *
+     * v0.1.24 shifts every top up by a uniform 0.012 (dy only).
+     * The v0.1.23 solve had landed each top's drawn shoulder line
+     * 0.016–0.027 BELOW the body's own shoulder (measured at the
+     * shoulder bands: the body's torso top is 0.327 / 0.330 /
+     * 0.312 on BODY_A / B / C, the drawn tops sat at 0.336–0.354),
+     * so the body's tank straps peeked above every garment's
+     * shoulder and the clothes read as slipping down — the user's
+     * 「シャツが全部下に少しズレてる」. The uniform shift halves
+     * the gap (to 0.004–0.015) while the collars stay inside the
+     * neck-base band (0.318–0.323 after the shift; the pinned
+     * band is 0.315–0.355), the hems keep their v0.1.23
+     * worn-length bands, and the raised cuffs only free more of
+     * the hands. Verified on enlarged crops (tools/audit24/). */
     fun topCal(top: PersonTop): FloatArray = when (top) {
-        PersonTop.TSHIRT -> floatArrayOf(0.70f, 0.875f, 0f, 0.040f)
-        PersonTop.SHIRT -> floatArrayOf(0.80f, 0.80f, 0f, 0.026f)
-        PersonTop.CARDIGAN -> floatArrayOf(0.55f, 0.45f, 0f, 0.009f)
-        PersonTop.LIGHT_OUTER -> floatArrayOf(0.60f, 0.625f, 0f, 0.016f)
-        PersonTop.KNIT_COAT -> floatArrayOf(0.65f, 0.60f, 0f, 0.023f)
-        PersonTop.DOWN -> floatArrayOf(1.0f, 0.575f, 0f, 0.017f)
+        PersonTop.TSHIRT -> floatArrayOf(0.70f, 0.875f, 0f, 0.028f)
+        PersonTop.SHIRT -> floatArrayOf(0.80f, 0.80f, 0f, 0.014f)
+        PersonTop.CARDIGAN -> floatArrayOf(0.55f, 0.45f, 0f, -0.003f)
+        PersonTop.LIGHT_OUTER -> floatArrayOf(0.60f, 0.625f, 0f, 0.004f)
+        PersonTop.KNIT_COAT -> floatArrayOf(0.65f, 0.60f, 0f, 0.011f)
+        PersonTop.DOWN -> floatArrayOf(1.0f, 0.575f, 0f, 0.005f)
     }
 }
 
@@ -483,7 +497,14 @@ data class PersonRig(
      * the face props (sunglasses, mask) are placed from these lines
      * instead of from fractions of the box. */
     val eyeY: Float,
-    val mouthY: Float
+    val mouthY: Float,
+    /** The measured cheek width (v0.1.24): the skin span at the
+     * mask's height (y ≈ 0.27), as a fraction of the body width,
+     * from the shipped pictures. The face box above is wider than
+     * the cheeks on some bases (BODY_A's runs to 0.499 against
+     * cheeks of 0.360), so the mask — which must span cheek to
+     * cheek, no more — is sized from this instead. */
+    val cheekW: Float
 ) {
     val faceW: Float get() = faceRight - faceLeft
     val faceH: Float get() = faceBottom - faceTop
@@ -496,32 +517,32 @@ object PersonRigs {
         PersonBase.BODY_A -> PersonRig(
             0.502f, 0.180f, 0.399f, 0.248f, 0.747f,
             0.754f, 0.638f, 0.241f, 0.637f,
-            0.216f, 0.260f
+            0.216f, 0.260f, 0.360f
         )
         PersonBase.BODY_B -> PersonRig(
             0.480f, 0.180f, 0.337f, 0.307f, 0.689f,
             0.732f, 0.630f, 0.264f, 0.630f,
-            0.216f, 0.260f
+            0.216f, 0.260f, 0.362f
         )
         PersonBase.BODY_C -> PersonRig(
             0.519f, 0.180f, 0.336f, 0.330f, 0.668f,
             0.893f, 0.629f, 0.106f, 0.629f,
-            0.216f, 0.260f
+            0.216f, 0.260f, 0.316f
         )
         PersonBase.RANK5_PORTRAIT -> PersonRig(
             0.489f, 0.180f, 0.314f, 0.306f, 0.690f,
             0.756f, 0.629f, 0.242f, 0.629f,
-            0.217f, 0.260f
+            0.217f, 0.260f, 0.365f
         )
         PersonBase.RANK6_PORTRAIT -> PersonRig(
             0.497f, 0.180f, 0.330f, 0.323f, 0.671f,
             0.80f, 0.63f, 0.20f, 0.63f,
-            0.216f, 0.261f
+            0.216f, 0.261f, 0.328f
         )
         PersonBase.RAINCOAT -> PersonRig(
             0.507f, 0.081f, 0.336f, 0.201f, 0.743f,
             0.848f, 0.629f, 0.148f, 0.629f,
-            0.216f, 0.260f
+            0.216f, 0.260f, 0.464f
         )
     }
 }
@@ -599,12 +620,30 @@ object PersonAnchors {
     const val KNITCAP_HS = 0.72f
     val KNITCAP_PAINT = floatArrayOf(0.001f, 0.000f, 0.999f, 0.999f)
 
-    /** Mask: width / face width; its top hangs this far below the
-     * measured eye line ([PersonRig.eyeY]), so it starts under the
-     * eyes on every base (until v0.1.20 it was placed by a share of
-     * the skin-box height and slipped below the chin on BODY_A). */
-    const val MASK_W = 1.06f
+    /** Mask (v0.1.24: placed by its CLOTH box, like the hats).
+     * [MASK_W] is the cloth width / cheek width
+     * ([PersonRig.cheekW]), [MASK_H] the cloth height / body
+     * height, and [MASK_PAINT] the cloth box inside the asset
+     * (asset fractions, measured from the shipped PNG: the white
+     * cloth component — the ear loops fill the rest of the asset's
+     * width and land in the hair at the face's sides). The cloth
+     * top hangs [MASK_DROP] below the measured eye line
+     * ([PersonRig.eyeY]) — the nose bridge — and [MASK_H] ends it
+     * at ≈0.304: the jaw line measures ≈0.287 on every base, so
+     * the cloth wraps just under the chin and stops clear of the
+     * muffler (baked tops ≈0.33 on the portraits, MUFFLER_TOP
+     * 0.305 on the layered bases). Until v0.1.23 the mask was
+     * placed by the asset rect at 1.06 × the rig face width: the
+     * cloth came out at only ≈0.79 of that width (a quarter of
+     * the asset is ear loops), and because the asset is tall for
+     * this face (cloth aspect ≈0.82 h/w against the face's
+     * ≈0.46), the cloth hung 0.05–0.08 of the body height below
+     * the chin — down the neck, and into the muffler on the
+     * portrait bases, which is what read as wrong. */
+    const val MASK_W = 1.02f
+    const val MASK_H = 0.068f
     const val MASK_DROP = 0.020f
+    val MASK_PAINT = floatArrayOf(0.125f, 0.027f, 0.874f, 0.973f)
 
     /** Sunglasses: width / face width; centered on the measured eye
      * line ([PersonRig.eyeY]) — until v0.1.20 they were centered at
@@ -615,12 +654,24 @@ object PersonAnchors {
      * time): height / body height; its top. Sized down in v0.1.21
      * (0.32 → 0.27): at the old size the ring covered the whole
      * chest of the slim bodies, and its top band reached the mouth.
-     * The neck towel: width / body width; its top (0.50 → 0.38 in
-     * v0.1.21: at the old width it read as an apron). */
+     * The neck towel: height / body height; its top (v0.1.24:
+     * height-driven like the muffler). The asset is a wrap band
+     * (its top ≈34%, the scalloped top edge and the U-curve) over
+     * two hanging panels with the chest showing between them.
+     * Until v0.1.23 it was width-driven (0.50 → 0.38 in v0.1.21)
+     * with its top at 0.355 — below the neck base (0.337) — so
+     * the band floated on the chest, clear of the neck it was
+     * meant to wrap, and the panels hung to 0.57–0.60 like an
+     * apron (on the portrait bases, a white apron under the baked
+     * muffler). The new top (0.298 — the jaw line measures
+     * ≈0.287, the muffler's top is 0.305) puts the band around
+     * the neck, and the height ends the panels at 0.510, on the
+     * upper chest. The width follows the asset's aspect (1.43):
+     * 0.33–0.38 of the body width depending on the base. */
     const val MUFFLER_H = 0.27f
     const val MUFFLER_TOP = 0.305f
-    const val TOWEL_W = 0.38f
-    const val TOWEL_TOP = 0.355f
+    const val TOWEL_H = 0.212f
+    const val TOWEL_TOP = 0.298f
 
     /** Mittens: height / body height, centered on each hand, the
      * hand sitting this share down the mitten. */
@@ -850,12 +901,6 @@ object PersonComposer {
         // Head, face and held layers still go over it as usual.
         val raincoatBase = spec.base == PersonBase.RAINCOAT
 
-        fun drawProp(art: PersonArt, cx: Float, topY: Float, w: Float) {
-            val img = bmp(ctx, art)
-            val h = w * img.height / img.width
-            canvas.drawBitmap(img, null, RectF(cx - w / 2f, topY, cx + w / 2f, topY + h), paint)
-        }
-
         /** A hat placed by its PAINTED box (v0.1.23): the painted
          * width and the painted bottom line are the anchors, the
          * dome flattened by the height scale — see [PersonAnchors].
@@ -887,10 +932,21 @@ object PersonComposer {
                     paint
                 )
             }
-            PersonNeck.TOWEL -> drawProp(
-                PersonArt.PROP_TOWEL, bx(0.5f), by(PersonAnchors.TOWEL_TOP),
-                PersonAnchors.TOWEL_W * bw
-            )
+            PersonNeck.TOWEL -> {
+                // Height-driven like the muffler (v0.1.24): the
+                // vertical story (band at the neck, panels ending
+                // on the upper chest) is the same on every base;
+                // the width follows the asset's aspect.
+                val img = bmp(ctx, PersonArt.PROP_TOWEL)
+                val h = PersonAnchors.TOWEL_H * ph
+                val w = h * img.width / img.height
+                canvas.drawBitmap(
+                    img, null,
+                    RectF(bx(0.5f) - w / 2f, by(PersonAnchors.TOWEL_TOP),
+                        bx(0.5f) + w / 2f, by(PersonAnchors.TOWEL_TOP) + h),
+                    paint
+                )
+            }
             PersonNeck.NONE -> Unit
         }
 
@@ -931,12 +987,18 @@ object PersonComposer {
 
         // ---- face (placed from the measured feature lines,
         //      v0.1.21: the sunglasses on the eye line, the mask
-        //      hanging just under it) ----
+        //      hanging just under it; v0.1.24: the mask is placed
+        //      by its cloth box — see [PersonAnchors.MASK_PAINT]) ----
         if (spec.mask) {
-            drawProp(
-                PersonArt.PROP_MASK, bx(rig.faceCx),
-                by(rig.eyeY + PersonAnchors.MASK_DROP),
-                PersonAnchors.MASK_W * rig.faceW * bw
+            val img = bmp(ctx, PersonArt.PROP_MASK)
+            val p = PersonAnchors.MASK_PAINT
+            val rectW = PersonAnchors.MASK_W * rig.cheekW * bw / (p[2] - p[0])
+            val rectH = PersonAnchors.MASK_H * ph / (p[3] - p[1])
+            val mLeft = bx(rig.faceCx) - (p[0] + p[2]) / 2f * rectW
+            val mTop = by(rig.eyeY + PersonAnchors.MASK_DROP) - p[1] * rectH
+            canvas.drawBitmap(
+                img, null,
+                RectF(mLeft, mTop, mLeft + rectW, mTop + rectH), paint
             )
         }
         if (spec.sunglasses) {
