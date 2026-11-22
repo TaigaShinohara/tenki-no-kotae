@@ -435,18 +435,30 @@ object PersonCanvas {
      * top ≈ 0.33 of the body height; the neck itself spans
      * 0.298–0.337): the product-shot tops ride high — the polo's
      * collar tips touched the jaw, the shirt's collar sat at the
-     * chin, the light coat's collar peaks covered the mouth. The
-     * cardigan was already right and keeps its v0.1.19 values. The
-     * vertical squeeze absorbs part of each shift so the hems stay
-     * near their worn length. Verified on 3× neckline crops
-     * (tools/audit22/) and pinned by a unit test. */
+     * chin, the light coat's collar peaks covered the mouth.
+     *
+     * v0.1.23 re-solved every value against the measured body
+     * silhouettes: the product-shot tops were also far too WIDE
+     * (silhouette excess over the body, arms included: cardigan
+     * +0.33, light outer +0.35, knit coat +0.32 of the body width
+     * at chest height) and hung to or past the hands, so the
+     * figure read as wearing a tent and the hands vanished under
+     * the cloth (hand-skin survival 0–8%). The new values narrow
+     * each top until its silhouette tracks the body's (excess
+     * −0.05…+0.05), keep the collar on the neck base, end the
+     * long sleeves just above the hands (drawn cuff ≈ 0.61–0.62,
+     * hands end ≈ 0.66) and give each garment its worn length.
+     * Survival after the fix, measured on the shipped assets:
+     * polo 91–97%, shirt 81%, cardigan 37%, light outer 65–67%,
+     * knit coat 47%, down 99%. Verified on enlarged crops
+     * (tools/audit23/) and pinned by unit tests. */
     fun topCal(top: PersonTop): FloatArray = when (top) {
-        PersonTop.TSHIRT -> floatArrayOf(1.0f, 0.91f, 0f, 0.047f)
-        PersonTop.SHIRT -> floatArrayOf(1.0f, 0.90f, 0f, 0.044f)
-        PersonTop.CARDIGAN -> floatArrayOf(0.82f, 0.55f, 0f, 0.05f)
-        PersonTop.LIGHT_OUTER -> floatArrayOf(1.0f, 0.87f, 0f, 0.075f)
-        PersonTop.KNIT_COAT -> floatArrayOf(1.0f, 0.78f, 0f, 0.079f)
-        PersonTop.DOWN -> floatArrayOf(1.0f, 0.85f, 0f, 0.090f)
+        PersonTop.TSHIRT -> floatArrayOf(0.70f, 0.875f, 0f, 0.040f)
+        PersonTop.SHIRT -> floatArrayOf(0.80f, 0.80f, 0f, 0.026f)
+        PersonTop.CARDIGAN -> floatArrayOf(0.55f, 0.45f, 0f, 0.009f)
+        PersonTop.LIGHT_OUTER -> floatArrayOf(0.60f, 0.625f, 0f, 0.016f)
+        PersonTop.KNIT_COAT -> floatArrayOf(0.65f, 0.60f, 0f, 0.023f)
+        PersonTop.DOWN -> floatArrayOf(1.0f, 0.575f, 0f, 0.017f)
     }
 }
 
@@ -562,13 +574,30 @@ object PersonAnchors {
 
     // ---- v0.1.19 prop anchors (fractions of the body rect) ----
 
-    /** Cap / knit cap: width / body width; the brim's / band's
-     * bottom. Both end just above the measured eye line (0.216) —
-     * until v0.1.20 they sat at 0.26 / 0.245, over the eyes. */
-    const val CAP_W = 0.45f
-    const val CAP_BOTTOM = 0.205f
-    const val KNITCAP_W = 0.52f
-    const val KNITCAP_BOTTOM = 0.20f
+    /** Cap / knit cap (v0.1.23: placed by the PAINTED box, not the
+     * asset rect). *_W is the painted width / body width, *_BOTTOM
+     * the painted bottom line (the brim's / the band's lower edge),
+     * *_HS a height scale, and *_PAINT the painted box inside the
+     * asset (asset fractions, measured from the shipped PNGs: the
+     * cap carries wide transparent margins, the knit cap fills its
+     * frame). Until v0.1.22 the hats were placed by the asset rect
+     * at 0.45 / 0.52 of the body width: against the hair cloud —
+     * ≈0.95 of the body width at that height — they read as small
+     * objects floating on top of the hair, the dome poking above
+     * the hairline at the centre while the hair spilled out above
+     * the dome's sides. The new widths (0.62 / 0.66) let the dome
+     * follow the hair cloud, the height scales (0.85 / 0.72)
+     * flatten the tall generated domes onto it, and the painted
+     * bottoms stay just above the measured eye line (0.216), as
+     * they have since v0.1.21. */
+    const val CAP_W = 0.62f
+    const val CAP_BOTTOM = 0.195f
+    const val CAP_HS = 0.85f
+    val CAP_PAINT = floatArrayOf(0.000f, 0.175f, 0.999f, 0.927f)
+    const val KNITCAP_W = 0.66f
+    const val KNITCAP_BOTTOM = 0.205f
+    const val KNITCAP_HS = 0.72f
+    val KNITCAP_PAINT = floatArrayOf(0.001f, 0.000f, 0.999f, 0.999f)
 
     /** Mask: width / face width; its top hangs this far below the
      * measured eye line ([PersonRig.eyeY]), so it starts under the
@@ -827,10 +856,21 @@ object PersonComposer {
             canvas.drawBitmap(img, null, RectF(cx - w / 2f, topY, cx + w / 2f, topY + h), paint)
         }
 
-        /** A prop placed by where its bottom edge lands (the hats). */
-        fun drawPropBottom(art: PersonArt, cx: Float, bottomY: Float, w: Float) {
+        /** A hat placed by its PAINTED box (v0.1.23): the painted
+         * width and the painted bottom line are the anchors, the
+         * dome flattened by the height scale — see [PersonAnchors].
+         * [paintBox] is (x0, y0, x1, y1) of the painted box inside
+         * the asset, in asset fractions. */
+        fun drawHat(
+            art: PersonArt, cx: Float, bottomY: Float,
+            paintW: Float, hs: Float, paintBox: FloatArray
+        ) {
             val img = bmp(ctx, art)
-            drawProp(art, cx, bottomY - w * img.height / img.width, w)
+            val rectW = paintW / (paintBox[2] - paintBox[0])
+            val rectH = rectW * img.height / img.width * hs
+            val left = cx - (paintBox[0] + paintBox[2]) / 2f * rectW
+            val top = bottomY - paintBox[3] * rectH
+            canvas.drawBitmap(img, null, RectF(left, top, left + rectW, top + rectH), paint)
         }
 
         // ---- neck (the portrait base wears its muffler baked in;
@@ -877,13 +917,14 @@ object PersonComposer {
 
         // ---- head ----
         when (spec.head) {
-            PersonHead.CAP -> drawPropBottom(
+            PersonHead.CAP -> drawHat(
                 PersonArt.PROP_CAP, bx(rig.faceCx), by(PersonAnchors.CAP_BOTTOM),
-                PersonAnchors.CAP_W * bw
+                PersonAnchors.CAP_W * bw, PersonAnchors.CAP_HS, PersonAnchors.CAP_PAINT
             )
-            PersonHead.KNITCAP -> drawPropBottom(
+            PersonHead.KNITCAP -> drawHat(
                 PersonArt.PROP_KNITCAP, bx(rig.faceCx), by(PersonAnchors.KNITCAP_BOTTOM),
-                PersonAnchors.KNITCAP_W * bw
+                PersonAnchors.KNITCAP_W * bw, PersonAnchors.KNITCAP_HS,
+                PersonAnchors.KNITCAP_PAINT
             )
             PersonHead.NONE -> Unit
         }

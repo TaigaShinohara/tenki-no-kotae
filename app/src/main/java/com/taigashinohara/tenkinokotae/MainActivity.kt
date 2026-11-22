@@ -2513,7 +2513,7 @@ class MainActivity : Activity() {
         // source's attribution directly under the data it describes —
         // one home for attribution instead of two.
         col.addView(TextView(this).apply {
-            text = "天気のこたえ v0.1.22（プロトタイプ）"
+            text = "天気のこたえ v0.1.23（プロトタイプ）"
             textSize = 13f; setTextColor(sub)
             setPadding(0, dp(24), 0, 0)
             lineHeight = dp(21)

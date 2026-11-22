@@ -546,6 +546,101 @@ class PersonFigureTest {
         }
     }
 
+    // ---- v0.1.23: the tops fit the body, the hats sit on the hair ----
+
+    @Test fun topHems_keepTheirWornLengths() {
+        // The v0.1.23 fit pass, pinned per top: each drawn hem
+        // (canvas box bottom through topCal, the same math as
+        // topCollars_landAtTheNeckBase) keeps the garment's worn
+        // length — the polo no longer hangs past the hands, the
+        // knit coat no longer reaches the shins.
+        val bands = mapOf(
+            PersonTop.TSHIRT to (0.68f..0.73f),
+            PersonTop.SHIRT to (0.60f..0.65f),
+            PersonTop.CARDIGAN to (0.63f..0.68f),
+            PersonTop.LIGHT_OUTER to (0.61f..0.66f),
+            PersonTop.KNIT_COAT to (0.69f..0.73f),
+            PersonTop.DOWN to (0.61f..0.66f)
+        )
+        val pairs = (0..4).map { r ->
+            val (base, top) = PersonFigure.outfitFor(r, false)
+            top!! to base
+        } + (PersonTop.DOWN to PersonBase.BODY_C)
+        for ((top, base) in pairs) {
+            val tb = PersonCanvas.box(PersonCanvas.topArt(top))
+            val bb = PersonCanvas.box(PersonCanvas.bodyArt(base))
+            val bh = bb[3] - bb[1]
+            val topF = (tb[1] - bb[1]) / bh
+            val botF = (tb[3] - bb[1]) / bh
+            val cen = (topF + botF) / 2f
+            val cal = PersonCanvas.topCal(top)
+            val hem = cen + cal[3] + (botF - cen) * cal[1]
+            assertTrue("$top hem $hem in ${bands[top]}", hem in bands[top]!!)
+        }
+    }
+
+    @Test fun topWidths_noLongerTentTheBody() {
+        // The drawn width of a top's canvas box, in body widths.
+        // The product-shot tops ran 0.93–1.22 before v0.1.23 —
+        // wider than the body itself, which is what made them
+        // hang like tents and swallow the arms. The fitted tops
+        // land at 0.60–0.67. The down is the exception: its box
+        // stays wider than the (widest) BODY_C box, and its fit
+        // was verified on silhouettes in the audit instead.
+        val pairs = (0..4).map { r ->
+            val (base, top) = PersonFigure.outfitFor(r, false)
+            top!! to base
+        }
+        for ((top, base) in pairs) {
+            val tb = PersonCanvas.box(PersonCanvas.topArt(top))
+            val bb = PersonCanvas.box(PersonCanvas.bodyArt(base))
+            val ratio = (tb[2] - tb[0]) / (bb[2] - bb[0]) *
+                PersonCanvas.topCal(top)[0]
+            assertTrue("$top drawn box width $ratio", ratio in 0.55f..0.72f)
+        }
+        val tb = PersonCanvas.box(PersonCanvas.topArt(PersonTop.DOWN))
+        val bb = PersonCanvas.box(PersonCanvas.bodyArt(PersonBase.BODY_C))
+        val downRatio = (tb[2] - tb[0]) / (bb[2] - bb[0]) *
+            PersonCanvas.topCal(PersonTop.DOWN)[0]
+        assertTrue("DOWN drawn box width $downRatio", downRatio in 1.05f..1.20f)
+    }
+
+    @Test fun hatPaintedBoxes_stayOnTheHair() {
+        // The v0.1.23 hat placement, pinned: the painted dome top
+        // must stay within the head pad (0.04 of the body height —
+        // padTop_followsTheTallestProp) on every base, so the hat
+        // is never clipped, and the painted bottom stays above the
+        // eye line (also asserted in faceAnchors_*). bw/ph per
+        // base: canvas bases from their boxes, the portraits from
+        // their asset pixel sizes (405×1024 / 448×1024).
+        val aspects = mapOf(
+            PersonBase.BODY_A to 0.3962f, PersonBase.BODY_B to 0.3976f,
+            PersonBase.BODY_C to 0.4494f, PersonBase.RAINCOAT to 0.3072f,
+            PersonBase.RANK5_PORTRAIT to 405f / 1024f,
+            PersonBase.RANK6_PORTRAIT to 448f / 1024f
+        )
+        // Painted height / painted width of each hat asset.
+        val capPHW = (0.927f - 0.175f) * 1024f / ((0.999f - 0.000f) * 795f)
+        val knitPHW = (0.999f - 0.000f) * 1024f / ((0.999f - 0.001f) * 934f)
+        for ((base, bwr) in aspects) {
+            val capTop = PersonAnchors.CAP_BOTTOM -
+                PersonAnchors.CAP_W * bwr * capPHW * PersonAnchors.CAP_HS
+            assertTrue("$base cap painted top $capTop", capTop >= -0.04f)
+            val knitTop = PersonAnchors.KNITCAP_BOTTOM -
+                PersonAnchors.KNITCAP_W * bwr * knitPHW * PersonAnchors.KNITCAP_HS
+            assertTrue("$base knitcap painted top $knitTop", knitTop >= -0.04f)
+        }
+        // The anchors themselves stay in their fitted bands.
+        assertTrue(PersonAnchors.CAP_W in 0.58f..0.66f)
+        assertTrue(PersonAnchors.KNITCAP_W in 0.62f..0.70f)
+        assertTrue(PersonAnchors.CAP_HS in 0.80f..0.90f)
+        assertTrue(PersonAnchors.KNITCAP_HS in 0.67f..0.77f)
+        for (p in listOf(PersonAnchors.CAP_PAINT, PersonAnchors.KNITCAP_PAINT)) {
+            assertTrue(p[0] < p[2] && p[1] < p[3])
+            assertTrue(p.all { it in 0f..1f })
+        }
+    }
+
     @Test fun sweatDrops_hugTheHair() {
         // The drops sit on the hair at the face's sides: inside the
         // body's silhouette horizontally and above the old earring
