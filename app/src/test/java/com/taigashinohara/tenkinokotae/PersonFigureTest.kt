@@ -441,19 +441,32 @@ class PersonFigureTest {
 
     @Test fun padTopRatio_parasolStillBeatsTheCap() {
         // The FALLBACK parasol's 0.34 still wins wherever no arm
-        // parasol serves — here on the rank-5 portrait. On rank 0
-        // the polo arm picture serves: until v0.1.27 it was
-        // grip-anchored at the person top (poke ≈ 0) and the
-        // cap's poke decided (pad 0.04); the v0.1.28 redraw is a
-        // full canopy picture whose top pokes 0.111 over the
-        // person rect, so the parasol beats the cap again (0.12).
+        // parasol and no portrait serves — here on the rank-5
+        // portrait. On rank 0 the day used to pad by the polo arm
+        // picture (0.12 in v0.1.28); since v0.1.29 the whole-
+        // picture parasol portrait serves instead, and the pad is
+        // its measured poke (0.2644, rounded up to 0.27) — the
+        // suppressed arm's poke and the cap's poke both lose.
         val s = spec19(5, uvMax = 9.0)
         assertEquals(PersonHeld.PARASOL, s.held)
         assertEquals(PersonHead.CAP, s.head)
         assertEquals(0.34f, PersonFigure.padTopRatio(s), 0.001f)
         val s0 = spec19(0, uvMax = 9.0).copy(held = PersonHeld.PARASOL)
         assertEquals(PersonHead.CAP, s0.head)
-        assertEquals(0.12f, PersonFigure.padTopRatio(s0), 0.001f)
+        assertEquals(0.27f, PersonFigure.padTopRatio(s0), 0.001f)
+        // Rank 1's parasol portrait pokes a little less (0.2415
+        // → 0.25); its fan portrait keeps the figure in place, so
+        // a fan day pads by nothing of its own.
+        val s1 = spec19(1, uvMax = 9.0).copy(held = PersonHeld.PARASOL)
+        assertEquals(0.25f, PersonFigure.padTopRatio(s1), 0.001f)
+        assertEquals(0.2644f, PersonAnchors.variantPoke(
+            PersonBase.BODY_B, PersonTop.TSHIRT, PersonHeld.PARASOL), 0.001f)
+        assertEquals(0.2415f, PersonAnchors.variantPoke(
+            PersonBase.BODY_A, PersonTop.SHIRT, PersonHeld.PARASOL), 0.001f)
+        assertTrue(PersonAnchors.variantPoke(
+            PersonBase.BODY_B, PersonTop.TSHIRT, PersonHeld.UCHIWA) < 0.01f)
+        assertTrue(PersonAnchors.variantPoke(
+            PersonBase.BODY_A, PersonTop.SHIRT, PersonHeld.UCHIWA) < 0.01f)
     }
 
     // ---- v0.1.26: arm layers + umbrella variants ----
@@ -484,19 +497,30 @@ class PersonFigureTest {
     }
 
     @Test fun variantArt_onlyPortraitsAndRaincoat() {
-        assertEquals(PersonArt.FIG_RANK5_OPEN, PersonAnchors.variantArt(PersonBase.RANK5_PORTRAIT, PersonHeld.OPEN))
-        assertEquals(PersonArt.FIG_RANK5_FOLDING, PersonAnchors.variantArt(PersonBase.RANK5_PORTRAIT, PersonHeld.FOLDED))
-        assertEquals(PersonArt.FIG_RANK6_OPEN, PersonAnchors.variantArt(PersonBase.RANK6_PORTRAIT, PersonHeld.OPEN))
-        assertEquals(PersonArt.FIG_RANK6_FOLDING, PersonAnchors.variantArt(PersonBase.RANK6_PORTRAIT, PersonHeld.FOLDED))
-        assertEquals(PersonArt.FIG_RAINCOAT_OPEN, PersonAnchors.variantArt(PersonBase.RAINCOAT, PersonHeld.OPEN))
-        assertEquals(PersonArt.FIG_RAINCOAT_FOLDING, PersonAnchors.variantArt(PersonBase.RAINCOAT, PersonHeld.FOLDED))
+        assertEquals(PersonArt.FIG_RANK5_OPEN, PersonAnchors.variantArt(PersonBase.RANK5_PORTRAIT, null, PersonHeld.OPEN))
+        assertEquals(PersonArt.FIG_RANK5_FOLDING, PersonAnchors.variantArt(PersonBase.RANK5_PORTRAIT, null, PersonHeld.FOLDED))
+        assertEquals(PersonArt.FIG_RANK6_OPEN, PersonAnchors.variantArt(PersonBase.RANK6_PORTRAIT, null, PersonHeld.OPEN))
+        assertEquals(PersonArt.FIG_RANK6_FOLDING, PersonAnchors.variantArt(PersonBase.RANK6_PORTRAIT, null, PersonHeld.FOLDED))
+        assertEquals(PersonArt.FIG_RAINCOAT_OPEN, PersonAnchors.variantArt(PersonBase.RAINCOAT, null, PersonHeld.OPEN))
+        assertEquals(PersonArt.FIG_RAINCOAT_FOLDING, PersonAnchors.variantArt(PersonBase.RAINCOAT, null, PersonHeld.FOLDED))
         for (base in listOf(PersonBase.BODY_A, PersonBase.BODY_B, PersonBase.BODY_C)) {
-            assertEquals(null, PersonAnchors.variantArt(base, PersonHeld.OPEN))
+            assertEquals(null, PersonAnchors.variantArt(base, null, PersonHeld.OPEN))
         }
         for (held in listOf(PersonHeld.NONE, PersonHeld.PARASOL, PersonHeld.UCHIWA)) {
-            assertEquals(null, PersonAnchors.variantArt(PersonBase.RANK5_PORTRAIT, held))
-            assertEquals(null, PersonAnchors.variantArt(PersonBase.RAINCOAT, held))
+            assertEquals(null, PersonAnchors.variantArt(PersonBase.RANK5_PORTRAIT, null, held))
+            assertEquals(null, PersonAnchors.variantArt(PersonBase.RAINCOAT, null, held))
         }
+        // v0.1.29: the two summer layered bases swap whole on a
+        // parasol / fan day — and only in their summer tops.
+        assertEquals(PersonArt.FIG_RANK0_PARASOL, PersonAnchors.variantArt(PersonBase.BODY_B, PersonTop.TSHIRT, PersonHeld.PARASOL))
+        assertEquals(PersonArt.FIG_RANK0_UCHIWA, PersonAnchors.variantArt(PersonBase.BODY_B, PersonTop.TSHIRT, PersonHeld.UCHIWA))
+        assertEquals(PersonArt.FIG_RANK1_PARASOL, PersonAnchors.variantArt(PersonBase.BODY_A, PersonTop.SHIRT, PersonHeld.PARASOL))
+        assertEquals(PersonArt.FIG_RANK1_UCHIWA, PersonAnchors.variantArt(PersonBase.BODY_A, PersonTop.SHIRT, PersonHeld.UCHIWA))
+        assertEquals(null, PersonAnchors.variantArt(PersonBase.BODY_B, PersonTop.TSHIRT, PersonHeld.OPEN))
+        assertEquals(null, PersonAnchors.variantArt(PersonBase.BODY_B, PersonTop.CARDIGAN, PersonHeld.PARASOL))
+        assertEquals(null, PersonAnchors.variantArt(PersonBase.BODY_A, PersonTop.TSHIRT, PersonHeld.PARASOL))
+        assertEquals(null, PersonAnchors.variantArt(PersonBase.BODY_C, PersonTop.TSHIRT, PersonHeld.PARASOL))
+        assertEquals(null, PersonAnchors.variantArt(PersonBase.BODY_B, null, PersonHeld.PARASOL))
     }
 
     @Test fun armRect_putsTheGripAndShaftOnTheHand() {
@@ -592,7 +616,9 @@ class PersonFigureTest {
         val arts = listOf(
             PersonArt.FIG_RANK5_OPEN, PersonArt.FIG_RANK5_FOLDING,
             PersonArt.FIG_RANK6_OPEN, PersonArt.FIG_RANK6_FOLDING,
-            PersonArt.FIG_RAINCOAT_OPEN, PersonArt.FIG_RAINCOAT_FOLDING
+            PersonArt.FIG_RAINCOAT_OPEN, PersonArt.FIG_RAINCOAT_FOLDING,
+            PersonArt.FIG_RANK0_PARASOL, PersonArt.FIG_RANK0_UCHIWA,
+            PersonArt.FIG_RANK1_PARASOL, PersonArt.FIG_RANK1_UCHIWA
         )
         for (art in arts) {
             val r = PersonAnchors.variantInner(art)
@@ -611,7 +637,19 @@ class PersonFigureTest {
                     PersonArt.FIG_RANK5_FOLDING -> PersonBase.RANK5_PORTRAIT
                     PersonArt.FIG_RANK6_FOLDING -> PersonBase.RANK6_PORTRAIT
                     else -> PersonBase.RAINCOAT
-                }, PersonHeld.FOLDED), 0.001f)
+                }, null, PersonHeld.FOLDED), 0.001f)
+        }
+        // v0.1.29: the fan portraits keep their figures in place
+        // (y0 ≈ 0, the fan hangs beside the hip), while the
+        // parasol portraits sit lower under their wide canopies
+        // (y0 ≈ 0.19–0.21, past the umbrella portraits' band).
+        for (art in listOf(PersonArt.FIG_RANK0_UCHIWA, PersonArt.FIG_RANK1_UCHIWA)) {
+            val r = PersonAnchors.variantInner(art)
+            assertTrue("$art figure unmoved ${r[1]}", r[1] in -0.01f..0.01f)
+        }
+        for (art in listOf(PersonArt.FIG_RANK0_PARASOL, PersonArt.FIG_RANK1_PARASOL)) {
+            val r = PersonAnchors.variantInner(art)
+            assertTrue("$art figure lowered ${r[1]}", r[1] in 0.19f..0.22f)
         }
         for (art in listOf(
             PersonArt.FIG_RANK5_OPEN, PersonArt.FIG_RANK6_OPEN,

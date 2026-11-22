@@ -183,7 +183,13 @@ enum class PersonArt {
     ARM_CARDIGAN_OPEN, ARM_CARDIGAN_FOLDING,
     ARM_KNITCOAT_OPEN, ARM_KNITCOAT_FOLDING,
     FIG_RANK5_OPEN, FIG_RANK5_FOLDING, FIG_RANK6_OPEN, FIG_RANK6_FOLDING,
-    FIG_RAINCOAT_OPEN, FIG_RAINCOAT_FOLDING
+    FIG_RAINCOAT_OPEN, FIG_RAINCOAT_FOLDING,
+    // v0.1.29: full-body parasol / fan portraits of the two
+    // summer layered bases (rank 0 = BODY_B + T-shirt, rank 1 =
+    // BODY_A + shirt), swapped in whole like the umbrella
+    // variants above.
+    FIG_RANK0_PARASOL, FIG_RANK0_UCHIWA,
+    FIG_RANK1_PARASOL, FIG_RANK1_UCHIWA
 }
 
 /** The outfit-linked elements of a spec (v0.1.20); see
@@ -397,17 +403,26 @@ object PersonFigure {
      */
     fun padTopRatio(spec: PersonSpec): Float {
         var pad = 0f
-        val arm = PersonAnchors.armArt(spec.top, spec.held)
-        if (spec.held == PersonHeld.PARASOL && arm == null) pad = 0.34f
-        if (arm != null) {
-            val poke = PersonAnchors.armPoke(spec.base, spec.top, spec.held)
-            if (poke > 0f) {
-                pad = maxOf(pad, ceil((poke + 0.005f) * 100f) / 100f)
+        // A whole-picture variant owns the held item outright
+        // (v0.1.29): its poke is the only held-item contribution —
+        // the arm layer it suppresses must not add its own poke,
+        // and the fallback parasol's flat 0.34 must not fire
+        // under a parasol portrait.
+        val variant = PersonAnchors.variantArt(spec.base, spec.top, spec.held)
+        if (variant != null) {
+            val vPoke = PersonAnchors.variantPoke(spec.base, spec.top, spec.held)
+            if (vPoke > 0f) {
+                pad = maxOf(pad, ceil((vPoke + 0.005f) * 100f) / 100f)
             }
-        }
-        val vPoke = PersonAnchors.variantPoke(spec.base, spec.held)
-        if (vPoke > 0f) {
-            pad = maxOf(pad, ceil((vPoke + 0.005f) * 100f) / 100f)
+        } else {
+            val arm = PersonAnchors.armArt(spec.top, spec.held)
+            if (spec.held == PersonHeld.PARASOL && arm == null) pad = 0.34f
+            if (arm != null) {
+                val poke = PersonAnchors.armPoke(spec.base, spec.top, spec.held)
+                if (poke > 0f) {
+                    pad = maxOf(pad, ceil((poke + 0.005f) * 100f) / 100f)
+                }
+            }
         }
         if (spec.head != PersonHead.NONE) {
             val poke = PersonAnchors.headLayerPoke(spec.base, spec.head)
@@ -1156,33 +1171,55 @@ object PersonAnchors {
     // ---- v0.1.26 umbrella variants of the portrait bases ----
 
     /**
-     * The umbrella variant of a portrait / raincoat base for a
-     * held state, or null where the day keeps the base picture:
-     * on an OPEN or FOLDED day the base is swapped whole for the
-     * generated picture that already holds that umbrella, and no
-     * held item is drawn over it. The layered bases have no
-     * variants (their arm layers serve instead), and neither do
-     * the parasol / fan (the fallback drawing serves them).
+     * The whole-picture variant of a base for a held state, or
+     * null where the day keeps the base picture: the base is
+     * swapped whole for the generated picture that already holds
+     * the item, and no held item or arm layer is drawn over it.
+     * The portrait / raincoat bases swap on an OPEN or FOLDED
+     * (umbrella) day; since v0.1.29 the two summer layered bases
+     * swap on a PARASOL or UCHIWA day — the polo arm layers for
+     * those two items never sat true on the body (the user's
+     * on-device checks in v0.1.26–28), so the parasol and the fan
+     * now arrive as one picture with the arm already in place,
+     * the way the umbrellas always did. Every other layered
+     * combo keeps its arm layer (or the grip fallback).
      */
-    fun variantArt(base: PersonBase, held: PersonHeld): PersonArt? =
-        when (base) {
-            PersonBase.RANK5_PORTRAIT -> when (held) {
-                PersonHeld.OPEN -> PersonArt.FIG_RANK5_OPEN
-                PersonHeld.FOLDED -> PersonArt.FIG_RANK5_FOLDING
-                else -> null
-            }
-            PersonBase.RANK6_PORTRAIT -> when (held) {
-                PersonHeld.OPEN -> PersonArt.FIG_RANK6_OPEN
-                PersonHeld.FOLDED -> PersonArt.FIG_RANK6_FOLDING
-                else -> null
-            }
-            PersonBase.RAINCOAT -> when (held) {
-                PersonHeld.OPEN -> PersonArt.FIG_RAINCOAT_OPEN
-                PersonHeld.FOLDED -> PersonArt.FIG_RAINCOAT_FOLDING
+    fun variantArt(
+        base: PersonBase, top: PersonTop?, held: PersonHeld
+    ): PersonArt? = when (base) {
+        PersonBase.RANK5_PORTRAIT -> when (held) {
+            PersonHeld.OPEN -> PersonArt.FIG_RANK5_OPEN
+            PersonHeld.FOLDED -> PersonArt.FIG_RANK5_FOLDING
+            else -> null
+        }
+        PersonBase.RANK6_PORTRAIT -> when (held) {
+            PersonHeld.OPEN -> PersonArt.FIG_RANK6_OPEN
+            PersonHeld.FOLDED -> PersonArt.FIG_RANK6_FOLDING
+            else -> null
+        }
+        PersonBase.RAINCOAT -> when (held) {
+            PersonHeld.OPEN -> PersonArt.FIG_RAINCOAT_OPEN
+            PersonHeld.FOLDED -> PersonArt.FIG_RAINCOAT_FOLDING
+            else -> null
+        }
+        PersonBase.BODY_B -> when {
+            top == PersonTop.TSHIRT -> when (held) {
+                PersonHeld.PARASOL -> PersonArt.FIG_RANK0_PARASOL
+                PersonHeld.UCHIWA -> PersonArt.FIG_RANK0_UCHIWA
                 else -> null
             }
             else -> null
         }
+        PersonBase.BODY_A -> when {
+            top == PersonTop.SHIRT -> when (held) {
+                PersonHeld.PARASOL -> PersonArt.FIG_RANK1_PARASOL
+                PersonHeld.UCHIWA -> PersonArt.FIG_RANK1_UCHIWA
+                else -> null
+            }
+            else -> null
+        }
+        else -> null
+    }
 
     /**
      * The inner rect of a variant picture: (x0, y0, x1, y1) in the
@@ -1220,6 +1257,22 @@ object PersonAnchors {
             floatArrayOf(0.0624f, 0.1690f, 0.7201f, 0.9998f)
         PersonArt.FIG_RAINCOAT_FOLDING ->
             floatArrayOf(-0.0001f, -0.0007f, 0.8948f, 1.0000f)
+        // v0.1.29: measured on the new portraits with
+        // tools/audit29/measure29.py — ink anchors (the eye
+        // spacing sets the width scale, the eye line and the
+        // boot line the height), because the pale summer tops
+        // defeat the skin-box detector. With these rects the
+        // mapped silhouettes match the bases to 0.4% at the
+        // hair and 1–2% at the hips / legs (see
+        // docs/FEATURE_v0.1.29.md).
+        PersonArt.FIG_RANK0_PARASOL ->
+            floatArrayOf(0.1951f, 0.2091f, 0.6492f, 0.9999f)
+        PersonArt.FIG_RANK0_UCHIWA ->
+            floatArrayOf(-0.0005f, 0.0005f, 0.9108f, 0.9992f)
+        PersonArt.FIG_RANK1_PARASOL ->
+            floatArrayOf(0.1889f, 0.1945f, 0.6492f, 0.9999f)
+        PersonArt.FIG_RANK1_UCHIWA ->
+            floatArrayOf(0.0017f, -0.0005f, 0.7745f, 1.0001f)
         else -> floatArrayOf(0f, 0f, 1f, 1f)
     }
 
@@ -1228,8 +1281,10 @@ object PersonAnchors {
      * fraction of the person height (the canopy's room):
      * innerTop / innerHeight. [PersonFigure.padTopRatio] pads
      * by this. */
-    fun variantPoke(base: PersonBase, held: PersonHeld): Float {
-        val art = variantArt(base, held) ?: return 0f
+    fun variantPoke(
+        base: PersonBase, top: PersonTop?, held: PersonHeld
+    ): Float {
+        val art = variantArt(base, top, held) ?: return 0f
         val r = variantInner(art)
         return maxOf(0f, r[1] / (r[3] - r[1]))
     }
@@ -1310,6 +1365,10 @@ object PersonComposer {
         PersonArt.FIG_RANK6_FOLDING -> R.drawable.rank6_umbrella_folding
         PersonArt.FIG_RAINCOAT_OPEN -> R.drawable.raincoat_umbrella_open
         PersonArt.FIG_RAINCOAT_FOLDING -> R.drawable.raincoat_umbrella_folding
+        PersonArt.FIG_RANK0_PARASOL -> R.drawable.rank0_parasol
+        PersonArt.FIG_RANK0_UCHIWA -> R.drawable.rank0_uchiwa
+        PersonArt.FIG_RANK1_PARASOL -> R.drawable.rank1_parasol
+        PersonArt.FIG_RANK1_UCHIWA -> R.drawable.rank1_uchiwa
     }
 
     private fun bmp(ctx: Context, art: PersonArt): Bitmap {
@@ -1338,7 +1397,7 @@ object PersonComposer {
         // picture lives inside it; [PersonAnchors.variantInner])
         // lands exactly on the standard person rect, so every rig
         // anchor below stays true and no held item is drawn.
-        val variant = PersonAnchors.variantArt(spec.base, spec.held)
+        val variant = PersonAnchors.variantArt(spec.base, spec.top, spec.held)
         val bl: Float
         val bw: Float
         if (variant != null) {
@@ -1407,8 +1466,16 @@ object PersonComposer {
         //      own arm, so the arm is never doubled. Where the
         //      batch has no picture for the combo, [arm] is null
         //      and the held slot below keeps the v0.1.22
-        //      grip-point drawing as the fallback) ----
-        val arm = PersonAnchors.armArt(spec.top, spec.held)
+        //      grip-point drawing as the fallback. A whole-picture
+        //      variant suppresses the arm layer: the portrait
+        //      already wears its arm holding the item (v0.1.29 —
+        //      before, the polo parasol / fan arm would have been
+        //      drawn over the new portraits) ----
+        val arm = if (variant == null) {
+            PersonAnchors.armArt(spec.top, spec.held)
+        } else {
+            null
+        }
         if (arm != null) {
             val img = bmp(ctx, arm)
             val a = PersonAnchors.armAnchor(arm)
