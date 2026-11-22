@@ -301,11 +301,13 @@ class PersonFigureTest {
 
     @Test fun padTop_followsTheTallestProp() {
         assertEquals(0.34f, PersonFigure.padTopRatio(spec19(2, uvMax = 8.0)), 0.001f)
-        // v0.1.25: the head layers are tall pictures (hair + hat),
-        // so the pad is the layer's measured poke over the person
-        // rect, per base — on BODY_A both layers poke ≈0.09.
-        assertEquals(0.10f, PersonFigure.padTopRatio(spec19(3, snow = true)), 0.001f)
-        assertEquals(0.10f, PersonFigure.padTopRatio(spec19(3, uvMax = 7.0)), 0.001f)
+        // The head layers' poke over the person rect, per base:
+        // v0.1.25's tall placement poked ≈0.09 (pad 0.10); since
+        // v0.1.28 the layer is drawn at the face's own height
+        // (non-uniform face-box fit), so both layers poke only
+        // ≈0.023–0.026 here — pad 0.03.
+        assertEquals(0.03f, PersonFigure.padTopRatio(spec19(3, snow = true)), 0.001f)
+        assertEquals(0.04f, PersonFigure.padTopRatio(spec19(3, uvMax = 7.0)), 0.001f)
         assertEquals(0f, PersonFigure.padTopRatio(spec19(3)), 0.001f)
     }
 
@@ -438,19 +440,20 @@ class PersonFigureTest {
     }
 
     @Test fun padTopRatio_parasolStillBeatsTheCap() {
-        // Until v0.1.25 this pinned the FALLBACK parasol's 0.34
-        // against the cap on rank 0 — but since v0.1.26 rank 0's
-        // parasol is the polo arm picture, grip-anchored at the
-        // person top (poke ≈ 0), so the cap's own poke decides
-        // there. The fallback's 0.34 still wins wherever no arm
-        // parasol serves — here on the rank-5 portrait.
+        // The FALLBACK parasol's 0.34 still wins wherever no arm
+        // parasol serves — here on the rank-5 portrait. On rank 0
+        // the polo arm picture serves: until v0.1.27 it was
+        // grip-anchored at the person top (poke ≈ 0) and the
+        // cap's poke decided (pad 0.04); the v0.1.28 redraw is a
+        // full canopy picture whose top pokes 0.111 over the
+        // person rect, so the parasol beats the cap again (0.12).
         val s = spec19(5, uvMax = 9.0)
         assertEquals(PersonHeld.PARASOL, s.held)
         assertEquals(PersonHead.CAP, s.head)
         assertEquals(0.34f, PersonFigure.padTopRatio(s), 0.001f)
         val s0 = spec19(0, uvMax = 9.0).copy(held = PersonHeld.PARASOL)
         assertEquals(PersonHead.CAP, s0.head)
-        assertEquals(0.04f, PersonFigure.padTopRatio(s0), 0.001f)
+        assertEquals(0.12f, PersonFigure.padTopRatio(s0), 0.001f)
     }
 
     // ---- v0.1.26: arm layers + umbrella variants ----
@@ -540,10 +543,11 @@ class PersonFigureTest {
         assertEquals(626 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_OPEN))
         assertEquals(283 to 1024, PersonAnchors.armPx(PersonArt.ARM_CARDIGAN_FOLDING))
         assertEquals(282 to 1024, PersonAnchors.armPx(PersonArt.ARM_KNITCOAT_FOLDING))
-        // v0.1.27: the regenerated fan picture is 568 wide, the
-        // rebuilt parasol kept its frame.
-        assertEquals(568 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_UCHIWA))
-        assertEquals(579 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_PARASOL))
+        // v0.1.28: both polo pictures were redrawn from the
+        // app's own summer composite (tools/audit28/) — new
+        // frames, re-measured anchors.
+        assertEquals(379 to 487, PersonAnchors.armPx(PersonArt.ARM_POLO_UCHIWA))
+        assertEquals(789 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_PARASOL))
     }
 
     @Test fun v0127_auditFixNumbers_stayPinned() {
@@ -555,12 +559,28 @@ class PersonFigureTest {
         // hands read at the shirt's sides.
         assertEquals(0.40f, PersonRigs.rig(PersonBase.RAINCOAT).cheekW, 0.001f)
         assertEquals(0.64f, PersonCanvas.topCal(PersonTop.TSHIRT)[0], 0.001f)
-        // The fan's re-measured grip on its regenerated picture.
+    }
+
+    @Test fun v0128_armRedrawNumbers_stayPinned() {
+        // The v0.1.28 arm redraw (tools/audit28/): both polo
+        // pictures regenerated from the app's own composite so
+        // the arm hangs from the shoulder. The parasol stands
+        // its shaft on the hand like the open umbrellas; the
+        // fan hangs unrotated (the v0.1.27 picture needed −16°
+        // because its arm grew up out of the fist).
+        val parasol = PersonAnchors.armAnchor(PersonArt.ARM_POLO_PARASOL)
+        assertEquals(0.598f, parasol.gripX, 0.001f)
+        assertEquals(0.909f, parasol.gripY, 0.001f)
+        assertEquals(0.598f, parasol.shaftX ?: -1f, 0.001f)
+        assertEquals(1.578f, parasol.dwFrac ?: -1f, 0.001f)
+        assertEquals(0.815f, parasol.dhFrac, 0.001f)
+        assertEquals(0f, parasol.rotDeg, 0.001f)
         val uchiwa = PersonAnchors.armAnchor(PersonArt.ARM_POLO_UCHIWA)
-        assertEquals(0.42f, uchiwa.gripX, 0.001f)
-        assertEquals(0.895f, uchiwa.gripY, 0.001f)
-        assertEquals(0.40f, uchiwa.dhFrac, 0.001f)
-        assertEquals(-16f, uchiwa.rotDeg, 0.001f)
+        assertEquals(0.235f, uchiwa.gripX, 0.001f)
+        assertEquals(0.842f, uchiwa.gripY, 0.001f)
+        assertEquals(0.690f, uchiwa.dwFrac ?: -1f, 0.001f)
+        assertEquals(0.351f, uchiwa.dhFrac, 0.001f)
+        assertEquals(0f, uchiwa.rotDeg, 0.001f)
     }
 
     @Test fun variantInner_staysSane() {
@@ -791,50 +811,62 @@ class PersonFigureTest {
         assertTrue("DOWN drawn box width $downRatio", downRatio in 1.05f..1.20f)
     }
 
-    // ---- v0.1.25: the head layers anchor the face onto the rig ----
+    // ---- v0.1.25 head layers; v0.1.28: the face BOX must match ----
 
-    @Test fun headLayers_anchorTheFaceOntoTheRig() {
-        // The v0.1.25 head layers, pinned: each layer is a picture
-        // of the hair already wearing the hat, placed so ITS face
-        // lands on the rig's face — centre x and top aligned, the
-        // raincoat on the eye line instead (its rig face top is
-        // the hood opening). The layer must cover the rig's whole
-        // face box (it replaces the base's hair), and its poke
-        // over the person rect must fit the spec's pad.
-        // bw/ph per base come from PersonCanvas.bodyAspect.
+    @Test fun headLayers_faceBoxMatchesTheBaseFace() {
+        // The v0.1.28 invariant (the user's report: changing hats
+        // changed the face's size): each head layer's measured
+        // face box is drawn exactly onto the base's measured
+        // target face box — same centre x, same width, same
+        // height — and its eye line lands on the rig's eye line,
+        // on EVERY base (the raincoat included: no special case
+        // since v0.1.28). The chin then follows from the two
+        // boxes' proportions; the layers and the bases share the
+        // eye→chin proportion to ≈0.003 of the height, so the
+        // chin gets 0.005 of slack (the pixel verification over
+        // the rendered composites is in tools/audit28/). The
+        // layer must still cover the target box (its hair
+        // replaces the base's), and its poke must fit the pad.
         for (base in PersonBase.values()) {
             val rig = PersonRigs.rig(base)
             val bw = PersonCanvas.bodyAspect(base) * 1000f
             val ph = 1000f
-            val eyeAnchored = base == PersonBase.RAINCOAT
+            val t = PersonAnchors.headTarget(base)
             for (head in listOf(PersonHead.CAP, PersonHead.KNITCAP)) {
                 val face = PersonAnchors.headFace(head)
                 val r = PersonAnchors.headLayerRect(
-                    head, rig, eyeAnchored, 0f, 0f, bw, ph
+                    head, base, 0f, 0f, bw, ph
                 )
-                val faceCx = r[0] + (face[0] + face[2]) / 2f * r[2]
+                val dLeft = r[0] + face[0] * r[2]
+                val dRight = r[0] + face[2] * r[2]
+                val dTop = r[1] + face[1] * r[3]
+                val dChin = r[1] + face[3] * r[3]
                 assertEquals(
-                    "$base $head face centre x", rig.faceCx * bw, faceCx, 1.5f
+                    "$base $head face centre x",
+                    (t[0] + t[2]) / 2f * bw, (dLeft + dRight) / 2f, 1.5f
                 )
-                if (eyeAnchored) {
-                    val eye = r[1] + PersonAnchors.headEye(head) * r[3]
-                    assertEquals(
-                        "$base $head eye line", rig.eyeY * ph, eye, 1.5f
-                    )
-                } else {
-                    val faceTop = r[1] + face[1] * r[3]
-                    assertEquals(
-                        "$base $head face top", rig.faceTop * ph, faceTop, 1.5f
-                    )
-                }
+                assertEquals(
+                    "$base $head face width",
+                    (t[2] - t[0]) * bw, dRight - dLeft, 1.5f
+                )
+                assertEquals(
+                    "$base $head face height",
+                    (t[3] - t[1]) * ph, dChin - dTop, 1.5f
+                )
+                val eye = r[1] + PersonAnchors.headEye(head) * r[3]
+                assertEquals(
+                    "$base $head eye line", rig.eyeY * ph, eye, 1.5f
+                )
+                assertEquals(
+                    "$base $head face top", t[1] * ph, dTop, 5f
+                )
+                assertEquals(
+                    "$base $head chin", t[3] * ph, dChin, 5f
+                )
                 assertTrue(
-                    "$base $head covers the face box",
-                    r[0] < rig.faceLeft * bw &&
-                        r[0] + r[2] > rig.faceRight * bw &&
-                        // The layer's hair ends at the chin band:
-                        // on BODY_A it lands within 0.002 of the
-                        // rig's chin, so the band gets 0.01 of slack.
-                        r[1] + r[3] > rig.faceBottom * ph - 0.01f * ph
+                    "$base $head covers the target box",
+                    r[0] < t[0] * bw && r[0] + r[2] > t[2] * bw &&
+                        r[1] < t[1] * ph && r[1] + r[3] > t[3] * ph
                 )
                 val poke = maxOf(0f, -r[1] / ph)
                 val spec = spec19(3).copy(base = base, head = head)
@@ -854,6 +886,16 @@ class PersonFigureTest {
             assertTrue(f[0] < f[2] && f[1] < f[3])
             assertTrue(f.all { it in 0f..1f })
             assertTrue(PersonAnchors.headEye(head) in 0.60f..0.70f)
+        }
+        // The target boxes stay as measured in tools/audit28/:
+        // chin ≈0.288 family-wide (0.279 on RANK6), top ≈0.180,
+        // and the raincoat's is the FACE inside the hood, not the
+        // hood opening (its rig box) — much narrower at the top.
+        for (base in PersonBase.values()) {
+            val t = PersonAnchors.headTarget(base)
+            assertTrue("$base target ordered", t[0] < t[2] && t[1] < t[3])
+            assertTrue("$base target chin ${t[3]}", t[3] in 0.27f..0.30f)
+            assertTrue("$base target top ${t[1]}", t[1] in 0.17f..0.19f)
         }
     }
 

@@ -768,20 +768,46 @@ object PersonAnchors {
     const val HEAD_KNIT_PX_H = 722
 
     /** The face box inside each head layer, (left, top, right,
-     * bottom) in asset fractions: by eye from the keyed PNGs in
-     * tools/preview_layers.py (the placement source of truth),
-     * cross-checked against the layers' ink clusters in
-     * tools/measure25.py — the eyes sit at (0.433 / 0.568, 0.654)
-     * in the cap layer and (0.414 / 0.584, 0.650) in the knit cap
-     * layer, symmetric about each box's centre x. */
-    val HEAD_CAP_FACE = floatArrayOf(0.349f, 0.557f, 0.650f, 0.975f)
-    val HEAD_KNIT_FACE = floatArrayOf(0.306f, 0.550f, 0.689f, 1.000f)
+     * CHIN) in asset fractions. v0.1.28 re-measured: the bottom
+     * is the chin (the jaw line where the skin component's width
+     * profile collapses), NOT the skin component's bottom edge —
+     * that edge is the neck cut, which sits at a different height
+     * in every picture and stretched / squashed the face when the
+     * box was scaled onto a base. Measured with the skin/ink
+     * detector in tools/audit28/ (the eyes sit at
+     * (0.433 / 0.568, 0.654) in the cap layer and
+     * (0.414 / 0.584, 0.650) in the knit cap layer, symmetric
+     * about each box's centre x; chin − eye = 0.194 of the asset
+     * height in both layers). */
+    val HEAD_CAP_FACE = floatArrayOf(0.349f, 0.556f, 0.651f, 0.848f)
+    val HEAD_KNIT_FACE = floatArrayOf(0.306f, 0.551f, 0.689f, 0.845f)
 
     /** The eye line inside each head layer (asset fraction; the
-     * measured ink-cluster centroids above). Only the raincoat
+     * measured ink-cluster centroids above). Since v0.1.28 every
      * base anchors on it — see [headLayerRect]. */
     const val HEAD_CAP_EYE = 0.654f
     const val HEAD_KNIT_EYE = 0.650f
+
+    /** The face box a head layer must land on, per base:
+     * (left, top, right, CHIN) in body fractions, measured off
+     * the shipped base pictures with the same detector as the
+     * layers' (tools/audit28/). This is NOT the rig's face box:
+     * the rig's box is the skin component's bounds — on BODY_A
+     * it is a stale v0.1.19 measurement wider than the drawn
+     * face, and on the RAINCOAT it is the hood opening. The rig
+     * box keeps serving the face props (mask, sunglasses); the
+     * head layers answer to this table instead. The chin is
+     * ≈0.288 on every base (0.279 on RANK6), the top ≈0.180. */
+    fun headTarget(base: PersonBase): FloatArray = when (base) {
+        PersonBase.BODY_A -> floatArrayOf(0.308f, 0.180f, 0.687f, 0.288f)
+        PersonBase.BODY_B -> floatArrayOf(0.307f, 0.181f, 0.688f, 0.289f)
+        PersonBase.BODY_C -> floatArrayOf(0.330f, 0.180f, 0.667f, 0.288f)
+        PersonBase.RANK5_PORTRAIT ->
+            floatArrayOf(0.306f, 0.181f, 0.689f, 0.289f)
+        PersonBase.RANK6_PORTRAIT ->
+            floatArrayOf(0.324f, 0.181f, 0.670f, 0.279f)
+        PersonBase.RAINCOAT -> floatArrayOf(0.251f, 0.180f, 0.740f, 0.288f)
+    }
 
     /** The layer's measured face box (see HEAD_CAP_FACE). */
     fun headFace(head: PersonHead): FloatArray = when (head) {
@@ -800,49 +826,37 @@ object PersonAnchors {
     /**
      * Where a head layer lands: (left, top, width, height) in the
      * person rect's units ((bl, pt) its top-left, bw × ph its
-     * size). The scale is uniform, set by the face width — the
-     * layer's face is drawn at the rig's face width — and the
-     * face's centre x and top land on the rig's, so the layer's
-     * hair + hat replace the base's hair wholesale (the Python
-     * previews measured the base hair under it at 0.88–1.00
-     * covered). The one exception is the RAINCOAT base: its rig
-     * face top (0.081) is the top of the hood opening, not the
-     * forehead, and the layer's face is much shorter than the
-     * hood box — anchoring on the top would float the layer's
-     * eyes ≈0.09 of the height above the hood's own eye line.
-     * There the layer's eye line lands on the rig's eye line
-     * instead (the previews never covered the raincoat; measured
-     * in tools/measure25.py, the record is
-     * docs/FEATURE_v0.1.25.md). Pure math, unit-tested.
+     * size). v0.1.28: the scale is NON-uniform — the layer's
+     * measured face box is drawn exactly onto the base's measured
+     * target face box ([headTarget]: width ratio on x, height
+     * ratio on y) — and the position is set by the face's centre
+     * x and the eye line (the layer's eye line lands on the
+     * rig's eye line, on every base including the raincoat).
+     * Until v0.1.27 the scale was uniform, set by the face width
+     * alone, and most bases anchored on the face top: the
+     * layers' faces are drawn with slightly different proportions
+     * than the bases', so switching hats changed the face's
+     * height and eye position (on BODY_A the eyes landed 0.011
+     * of the height low and the chin 0.033 low; the raincoat's
+     * eye-anchored uniform scale stretched its face vertically).
+     * The hat and hair stretch by the same few percent — the
+     * mirror verification (tools/audit28/verify_faces28.py) puts
+     * every base's eye spacing / eye line / chin within 0.003 of
+     * the body height of the bare head. Pure math, unit-tested.
      */
     fun headLayerRect(
-        head: PersonHead, rig: PersonRig, eyeAnchored: Boolean,
+        head: PersonHead, base: PersonBase,
         bl: Float, pt: Float, bw: Float, ph: Float
     ): FloatArray {
-        val iw: Int
-        val ih: Int
-        val face: FloatArray
-        val eye: Float
-        when (head) {
-            PersonHead.CAP -> {
-                iw = HEAD_CAP_PX_W; ih = HEAD_CAP_PX_H
-                face = HEAD_CAP_FACE; eye = HEAD_CAP_EYE
-            }
-            PersonHead.KNITCAP -> {
-                iw = HEAD_KNIT_PX_W; ih = HEAD_KNIT_PX_H
-                face = HEAD_KNIT_FACE; eye = HEAD_KNIT_EYE
-            }
-            PersonHead.NONE -> return floatArrayOf(bl, pt, 0f, 0f)
-        }
-        val scale = rig.faceW * bw / ((face[2] - face[0]) * iw)
-        val w = iw * scale
-        val h = ih * scale
-        val left = bl + rig.faceCx * bw - (face[0] + face[2]) / 2f * w
-        val top = if (eyeAnchored) {
-            pt + rig.eyeY * ph - eye * h
-        } else {
-            pt + rig.faceTop * ph - face[1] * h
-        }
+        if (head == PersonHead.NONE) return floatArrayOf(bl, pt, 0f, 0f)
+        val face = headFace(head)
+        val eye = headEye(head)
+        val t = headTarget(base)
+        val w = (t[2] - t[0]) * bw / (face[2] - face[0])
+        val h = (t[3] - t[1]) * ph / (face[3] - face[1])
+        val left = bl + (t[0] + t[2]) / 2f * bw -
+            (face[0] + face[2]) / 2f * w
+        val top = pt + PersonRigs.rig(base).eyeY * ph - eye * h
         return floatArrayOf(left, top, w, h)
     }
 
@@ -853,8 +867,7 @@ object PersonAnchors {
     fun headLayerPoke(base: PersonBase, head: PersonHead): Float {
         if (head == PersonHead.NONE) return 0f
         val r = headLayerRect(
-            head, PersonRigs.rig(base), base == PersonBase.RAINCOAT,
-            0f, 0f, PersonCanvas.bodyAspect(base), 1f
+            head, base, 0f, 0f, PersonCanvas.bodyAspect(base), 1f
         )
         return maxOf(0f, -r[1])
     }
@@ -1011,8 +1024,8 @@ object PersonAnchors {
     fun armPx(art: PersonArt): Pair<Int, Int> = when (art) {
         PersonArt.ARM_POLO_OPEN -> 626 to 1024
         PersonArt.ARM_POLO_FOLDING -> 290 to 1024
-        PersonArt.ARM_POLO_PARASOL -> 579 to 1024
-        PersonArt.ARM_POLO_UCHIWA -> 568 to 1024
+        PersonArt.ARM_POLO_PARASOL -> 789 to 1024
+        PersonArt.ARM_POLO_UCHIWA -> 379 to 487
         PersonArt.ARM_CARDIGAN_OPEN -> 626 to 1024
         PersonArt.ARM_CARDIGAN_FOLDING -> 283 to 1024
         PersonArt.ARM_KNITCOAT_OPEN -> 625 to 1024
@@ -1030,15 +1043,22 @@ object PersonAnchors {
             ArmAnchor(0.83f, 0.84f, 0.815f, 1.20f, 0.95f, 0f)
         PersonArt.ARM_POLO_FOLDING ->
             ArmAnchor(0.40f, 0.40f, null, null, 0.70f, 12f)
-        // v0.1.27: the parasol picture was rebuilt in place (its
-        // sleeve floated off the shoulder) — same size, same
-        // anchor. The fan picture was regenerated with a domed
-        // shoulder cap: new width (568) and the grip re-measured
-        // on the new fist at (0.42, 0.895); dh / rot unchanged.
+        // v0.1.28: both pictures were redrawn by edit-generating
+        // the app's own summer composite (tools/audit28/): the arm
+        // now hangs from the shoulder — polo sleeve, bare forearm,
+        // fist at hip height. The v0.1.27 parasol (a program-drawn
+        // sleeve capsule floating at head height, the arm a
+        // straight stick below it) and the v0.1.27 fan (the arm
+        // growing UP out of the fist, the sleeve cap at head
+        // height) are gone. The parasol anchors on its shaft like
+        // the open umbrellas; the fan's grip is declared a touch
+        // left of its fist's centre so the sleeve lands on the
+        // polo's sleeve zone (measured in the mirror trials,
+        // tools/audit28/trial_arms28.py).
         PersonArt.ARM_POLO_PARASOL ->
-            ArmAnchor(0.655f, 0.955f, null, 1.10f, 0.66f, 0f)
+            ArmAnchor(0.598f, 0.909f, 0.598f, 1.578f, 0.815f, 0f)
         PersonArt.ARM_POLO_UCHIWA ->
-            ArmAnchor(0.42f, 0.895f, null, null, 0.40f, -16f)
+            ArmAnchor(0.235f, 0.842f, null, 0.690f, 0.351f, 0f)
         PersonArt.ARM_CARDIGAN_OPEN ->
             ArmAnchor(0.57f, 0.84f, 0.545f, 1.20f, 0.95f, 0f)
         PersonArt.ARM_CARDIGAN_FOLDING ->
@@ -1503,8 +1523,7 @@ object PersonComposer {
             }
             val img = bmp(ctx, art)
             val r = PersonAnchors.headLayerRect(
-                spec.head, rig, spec.base == PersonBase.RAINCOAT,
-                bl, pt, bw, ph
+                spec.head, spec.base, bl, pt, bw, ph
             )
             canvas.drawBitmap(
                 img, null,
