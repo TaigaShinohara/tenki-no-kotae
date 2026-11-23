@@ -184,10 +184,14 @@ enum class PersonArt {
     // v0.1.26: sleeve-group arm layers (sleeve + arm + item in one
     // picture) and the umbrella variants of the portrait bases.
     ARM_POLO_OPEN, ARM_POLO_FOLDING, ARM_POLO_PARASOL, ARM_POLO_UCHIWA,
-    ARM_CARDIGAN_OPEN, ARM_CARDIGAN_FOLDING,
-    ARM_KNITCOAT_OPEN, ARM_KNITCOAT_FOLDING,
+    ARM_CARDIGAN_OPEN, ARM_CARDIGAN_FOLDING, ARM_CARDIGAN_PARASOL,
+    ARM_KNITCOAT_OPEN, ARM_KNITCOAT_FOLDING, ARM_KNITCOAT_PARASOL,
     FIG_RANK5_OPEN, FIG_RANK5_FOLDING, FIG_RANK6_OPEN, FIG_RANK6_FOLDING,
     FIG_RAINCOAT_OPEN, FIG_RAINCOAT_FOLDING,
+    // v0.1.33: parasol variants of the portrait / raincoat bases —
+    // the approved OPEN pictures with only the umbrella repainted
+    // (see FIG_RANK5_PARASOL & co. in the anchors below).
+    FIG_RANK5_PARASOL, FIG_RANK6_PARASOL, FIG_RAINCOAT_PARASOL,
     // v0.1.29: full-body parasol / fan portraits of the two
     // summer layered bases (rank 0 = BODY_B + T-shirt, rank 1 =
     // BODY_A + shirt), swapped in whole like the umbrella
@@ -399,12 +403,15 @@ object PersonFigure {
      * person sits lower in its frame (v0.1.26). The one flat rule
      * left is the FALLBACK parasol's 0.34 (the standing rule since
      * v0.1.19): the old floating asset rides well above the head,
-     * but only where no arm-layer parasol serves — the polo group's
-     * arm parasol (v0.1.30: the rain umbrella's own picture with a
-     * repainted canopy) pads by its measured poke instead, like
-     * the open umbrella. [PersonComposer] shrinks the person into
-     * the given rect by this much; callers sizing a view for a
-     * known person height multiply by (1 + padTopRatio).
+     * but only where neither an arm-layer parasol nor a portrait
+     * variant serves — since v0.1.33 every sleeve group has an arm
+     * parasol (the rain layer repainted; the polo group's came in
+     * v0.1.30) and the portrait / raincoat bases swap to parasol
+     * variants, so the fallback keeps only the DOWN top and other
+     * layer-less pins the test screen can make. [PersonComposer]
+     * shrinks the person into the given rect by this much;
+     * callers sizing a view for a known person height multiply by
+     * (1 + padTopRatio).
      */
     fun padTopRatio(spec: PersonSpec): Float {
         var pad = 0f
@@ -412,8 +419,8 @@ object PersonFigure {
         // its poke is the only held-item contribution — the arm
         // layer it suppresses must not add its own poke, and the
         // fallback parasol's flat 0.34 must not fire under a
-        // portrait. (Since v0.1.30 only the umbrella variants of
-        // the portrait / raincoat bases remain.)
+        // portrait. (Since v0.1.30 the variants are the portrait /
+        // raincoat bases'; v0.1.33 added their parasol variants.)
         val variant = PersonAnchors.variantArt(spec.base, spec.top, spec.held)
         if (variant != null) {
             val vPoke = PersonAnchors.variantPoke(spec.base, spec.top, spec.held)
@@ -1102,8 +1109,12 @@ object PersonAnchors {
         PersonArt.ARM_POLO_UCHIWA -> 379 to 487
         PersonArt.ARM_CARDIGAN_OPEN -> 746 to 1024
         PersonArt.ARM_CARDIGAN_FOLDING -> 283 to 1024
+        // v0.1.33: the cardigan / knit-coat parasols are their
+        // rain layers repainted — same canvases (746 / 655).
+        PersonArt.ARM_CARDIGAN_PARASOL -> 746 to 1024
         PersonArt.ARM_KNITCOAT_OPEN -> 655 to 1024
         PersonArt.ARM_KNITCOAT_FOLDING -> 282 to 1024
+        PersonArt.ARM_KNITCOAT_PARASOL -> 655 to 1024
         else -> 1 to 1
     }
 
@@ -1151,9 +1162,23 @@ object PersonAnchors {
             ArmAnchor(0.235f, 0.842f, null, 0.690f, 0.351f, 0f)
         PersonArt.ARM_CARDIGAN_OPEN ->
             ArmAnchor(0.58555f, 0.84f, 0.56458f, 1.43003f, 0.95f, 0f)
+        // v0.1.33: the cardigan parasol is the cardigan rain layer
+        // itself with only its umbrella repainted
+        // (tools/audit33/make_parasol_layers33.py; alpha asserted
+        // identical, sleeve cloth asserted unchanged) — the rain
+        // layer's anchor verbatim, the polo rule extended.
+        PersonArt.ARM_CARDIGAN_PARASOL ->
+            ArmAnchor(0.58555f, 0.84f, 0.56458f, 1.43003f, 0.95f, 0f)
         PersonArt.ARM_CARDIGAN_FOLDING ->
             ArmAnchor(0.42f, 0.40f, null, null, 0.70f, 24f)
         PersonArt.ARM_KNITCOAT_OPEN ->
+            ArmAnchor(0.75382f, 0.85f, 0.73950f, 1.2576f, 0.95f, 0f)
+        // v0.1.33: same rule for the knit coat — its parasol is
+        // the rain layer repainted under a spatial mask (the
+        // coat's own sleeve cloth is navy, so the repaint is
+        // bounded to the canopy + shaft + hook + ink outlines;
+        // the sleeve interior is asserted unchanged).
+        PersonArt.ARM_KNITCOAT_PARASOL ->
             ArmAnchor(0.75382f, 0.85f, 0.73950f, 1.2576f, 0.95f, 0f)
         PersonArt.ARM_KNITCOAT_FOLDING ->
             ArmAnchor(0.42f, 0.40f, null, null, 0.70f, 24f)
@@ -1167,10 +1192,15 @@ object PersonAnchors {
      * grouping): the polo group serves the short-sleeve tops
      * (ranks 0–1: TSHIRT and SHIRT), the cardigan group the thin
      * long sleeves (ranks 2–3: CARDIGAN and LIGHT_OUTER), and the
-     * knit coat is rank 4's own. The parasol exists only in the
-     * polo group, and the fan in none (v0.1.30) — the auto rules
-     * only ever raise them on the hottest days; any other top
-     * asking for them (the test screen can) takes the fallback.
+     * knit coat is rank 4's own. The parasol exists in all
+     * three sleeve groups since v0.1.33 (in v0.1.30–32 only the
+     * polo group had one; the cardigan and knit-coat parasol days
+     * took the grip fallback, whose thin old-dome prop matched
+     * nothing the v0.1.32 rebuild had made — the user's call that
+     * sent this version back to the rain layers as the source).
+     * The fan is in none (v0.1.30) — the auto rules only ever
+     * raise it on the hottest days; any other top asking for it
+     * (the test screen can) takes the fallback.
      */
     fun armArt(top: PersonTop?, held: PersonHeld): PersonArt? {
         val polo = top == PersonTop.TSHIRT || top == PersonTop.SHIRT
@@ -1189,8 +1219,12 @@ object PersonAnchors {
                 knit -> PersonArt.ARM_KNITCOAT_FOLDING
                 else -> null
             }
-            PersonHeld.PARASOL ->
-                if (polo) PersonArt.ARM_POLO_PARASOL else null
+            PersonHeld.PARASOL -> when {
+                polo -> PersonArt.ARM_POLO_PARASOL
+                cardigan -> PersonArt.ARM_CARDIGAN_PARASOL
+                knit -> PersonArt.ARM_KNITCOAT_PARASOL
+                else -> null
+            }
             // v0.1.30: no arm layer serves the fan on any top —
             // the standalone prop + hand patch (the composer's
             // held slot) carries it; the v0.1.28 polo fan picture
@@ -1254,7 +1288,19 @@ object PersonAnchors {
      * swapped whole for the generated picture that already holds
      * the item, and no held item or arm layer is drawn over it.
      * The portrait / raincoat bases swap on an OPEN or FOLDED
-     * (umbrella) day. The two summer layered bases did the same
+     * (umbrella) day, and — since v0.1.33 — on a PARASOL day too:
+     * the parasol variants are the approved OPEN pictures with
+     * only the umbrella (canopy + shaft + hook) repainted in the
+     * parasol family's colours
+     * (tools/audit33/make_parasol_variants33.py; the figure keeps
+     * every pixel, alpha identical), so they take the OPEN
+     * variants' inner rects verbatim. Before v0.1.33 a parasol
+     * day on these bases fell through to the grip fallback drawn
+     * over the plain portrait — the thin old-dome prop, a code
+     * shaft ending beside an empty hand, and both arms hanging
+     * unused. (In the auto rules a parasol day is a high-UV day,
+     * which never coincides with the coldest ranks or with rain
+     * gear; the test screen can still pin the combination.) The two summer layered bases did the same
      * on a PARASOL / UCHIWA day in v0.1.29, but the portraits
      * redrew the figure a few percent off its base and the user
      * still read them as off; v0.1.30 retired those four
@@ -1269,16 +1315,19 @@ object PersonAnchors {
         PersonBase.RANK5_PORTRAIT -> when (held) {
             PersonHeld.OPEN -> PersonArt.FIG_RANK5_OPEN
             PersonHeld.FOLDED -> PersonArt.FIG_RANK5_FOLDING
+            PersonHeld.PARASOL -> PersonArt.FIG_RANK5_PARASOL
             else -> null
         }
         PersonBase.RANK6_PORTRAIT -> when (held) {
             PersonHeld.OPEN -> PersonArt.FIG_RANK6_OPEN
             PersonHeld.FOLDED -> PersonArt.FIG_RANK6_FOLDING
+            PersonHeld.PARASOL -> PersonArt.FIG_RANK6_PARASOL
             else -> null
         }
         PersonBase.RAINCOAT -> when (held) {
             PersonHeld.OPEN -> PersonArt.FIG_RAINCOAT_OPEN
             PersonHeld.FOLDED -> PersonArt.FIG_RAINCOAT_FOLDING
+            PersonHeld.PARASOL -> PersonArt.FIG_RAINCOAT_PARASOL
             else -> null
         }
         // v0.1.30: the summer layered bases no longer swap — the
@@ -1325,6 +1374,15 @@ object PersonAnchors {
             floatArrayOf(0.0624f, 0.1690f, 0.7201f, 0.9998f)
         PersonArt.FIG_RAINCOAT_FOLDING ->
             floatArrayOf(-0.0001f, -0.0007f, 0.8948f, 1.0000f)
+        // v0.1.33: the parasol variants are repaints of the OPEN
+        // pictures (not a pixel moved), so their inner rects are
+        // the OPEN rects verbatim.
+        PersonArt.FIG_RANK5_PARASOL ->
+            floatArrayOf(0.0039f, 0.0818f, 0.8056f, 0.9999f)
+        PersonArt.FIG_RANK6_PARASOL ->
+            floatArrayOf(0.0037f, 0.1361f, 0.8830f, 0.9999f)
+        PersonArt.FIG_RAINCOAT_PARASOL ->
+            floatArrayOf(0.0624f, 0.1690f, 0.7201f, 0.9998f)
         // v0.1.29: measured on the new portraits with
         // tools/audit29/measure29.py — ink anchors (the eye
         // spacing sets the width scale, the eye line and the
@@ -1427,14 +1485,19 @@ object PersonComposer {
         PersonArt.ARM_POLO_UCHIWA -> R.drawable.arm_polo_uchiwa
         PersonArt.ARM_CARDIGAN_OPEN -> R.drawable.arm_cardigan_umbrella_open
         PersonArt.ARM_CARDIGAN_FOLDING -> R.drawable.arm_cardigan_umbrella_folding
+        PersonArt.ARM_CARDIGAN_PARASOL -> R.drawable.arm_cardigan_parasol
         PersonArt.ARM_KNITCOAT_OPEN -> R.drawable.arm_knitcoat_umbrella_open
         PersonArt.ARM_KNITCOAT_FOLDING -> R.drawable.arm_knitcoat_umbrella_folding
+        PersonArt.ARM_KNITCOAT_PARASOL -> R.drawable.arm_knitcoat_parasol
         PersonArt.FIG_RANK5_OPEN -> R.drawable.rank5_umbrella_open
         PersonArt.FIG_RANK5_FOLDING -> R.drawable.rank5_umbrella_folding
+        PersonArt.FIG_RANK5_PARASOL -> R.drawable.rank5_umbrella_parasol
         PersonArt.FIG_RANK6_OPEN -> R.drawable.rank6_umbrella_open
         PersonArt.FIG_RANK6_FOLDING -> R.drawable.rank6_umbrella_folding
+        PersonArt.FIG_RANK6_PARASOL -> R.drawable.rank6_umbrella_parasol
         PersonArt.FIG_RAINCOAT_OPEN -> R.drawable.raincoat_umbrella_open
         PersonArt.FIG_RAINCOAT_FOLDING -> R.drawable.raincoat_umbrella_folding
+        PersonArt.FIG_RAINCOAT_PARASOL -> R.drawable.raincoat_umbrella_parasol
         PersonArt.FIG_RANK0_PARASOL -> R.drawable.rank0_parasol
         PersonArt.FIG_RANK0_UCHIWA -> R.drawable.rank0_uchiwa
         PersonArt.FIG_RANK1_PARASOL -> R.drawable.rank1_parasol

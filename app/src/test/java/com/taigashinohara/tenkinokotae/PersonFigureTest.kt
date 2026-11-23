@@ -300,7 +300,11 @@ class PersonFigureTest {
     }
 
     @Test fun padTop_followsTheTallestProp() {
-        assertEquals(0.34f, PersonFigure.padTopRatio(spec19(2, uvMax = 8.0)), 0.001f)
+        // v0.1.33: rank 2's parasol day takes the cardigan arm
+        // parasol (the rain layer repainted), so the pad is its
+        // measured poke 0.17 — the fallback's flat 0.34 no longer
+        // fires on any sleeve group.
+        assertEquals(0.17f, PersonFigure.padTopRatio(spec19(2, uvMax = 8.0)), 0.001f)
         // The head layers' poke over the person rect, per base:
         // v0.1.25's tall placement poked ≈0.09 (pad 0.10); since
         // v0.1.28 the layer is drawn at the face's own height
@@ -440,19 +444,22 @@ class PersonFigureTest {
     }
 
     @Test fun padTopRatio_parasolStillBeatsTheCap() {
-        // The FALLBACK parasol's 0.34 still wins wherever no arm
-        // parasol and no portrait serves — here on the rank-5
-        // portrait. On ranks 0–1 the polo arm parasol serves
-        // again since v0.1.30 (the rain umbrella's own picture
-        // with a repainted canopy), so the pad is the arm
-        // picture's poke — 0.168 → 0.18 on rank 0, 0.160 → 0.17
-        // on rank 1 — and the cap's poke loses to both. The
-        // v0.1.29 whole-picture parasol portraits (poke 0.2644 /
-        // 0.2415) are retired: no variant serves a summer base.
+        // v0.1.33: the rank-5 portrait swaps whole to its parasol
+        // variant (the OPEN picture with only the umbrella
+        // repainted), so the pad is the variant's poke — 0.089 →
+        // 0.10, the same as its rain-umbrella day — and the
+        // FALLBACK parasol's 0.34 no longer fires here either (it
+        // survives only for layer-less pins like the DOWN top).
+        // On ranks 0–1 the polo arm parasol serves (since
+        // v0.1.30), so the pad is the arm picture's poke — 0.168 →
+        // 0.18 on rank 0, 0.160 → 0.17 on rank 1 — and the cap's
+        // poke loses to both. The v0.1.29 whole-picture parasol
+        // portraits (poke 0.2644 / 0.2415) stay retired: no variant
+        // serves a summer base.
         val s = spec19(5, uvMax = 9.0)
         assertEquals(PersonHeld.PARASOL, s.held)
         assertEquals(PersonHead.CAP, s.head)
-        assertEquals(0.34f, PersonFigure.padTopRatio(s), 0.001f)
+        assertEquals(0.10f, PersonFigure.padTopRatio(s), 0.001f)
         val s0 = spec19(0, uvMax = 9.0).copy(held = PersonHeld.PARASOL)
         assertEquals(PersonHead.CAP, s0.head)
         assertEquals(0.18f, PersonFigure.padTopRatio(s0), 0.001f)
@@ -470,9 +477,10 @@ class PersonFigureTest {
 
     @Test fun armArt_followsSleeveGroups() {
         // Polo group (ranks 0–1) has both umbrellas and the
-        // parasol (the fan left the arm route in v0.1.30); the cardigan
-        // group (ranks 2–3) and the knit coat (rank 4) have the
-        // two umbrellas; anything else falls back to the old
+        // parasol (the fan left the arm route in v0.1.30); since
+        // v0.1.33 the cardigan group (ranks 2–3) and the knit coat
+        // (rank 4) have the parasol too — each is its rain layer
+        // repainted; anything else falls back to the old
         // grip-point drawing (null).
         for (top in listOf(PersonTop.TSHIRT, PersonTop.SHIRT)) {
             assertEquals(PersonArt.ARM_POLO_OPEN, PersonAnchors.armArt(top, PersonHeld.OPEN))
@@ -485,12 +493,12 @@ class PersonFigureTest {
         for (top in listOf(PersonTop.CARDIGAN, PersonTop.LIGHT_OUTER)) {
             assertEquals(PersonArt.ARM_CARDIGAN_OPEN, PersonAnchors.armArt(top, PersonHeld.OPEN))
             assertEquals(PersonArt.ARM_CARDIGAN_FOLDING, PersonAnchors.armArt(top, PersonHeld.FOLDED))
-            assertEquals(null, PersonAnchors.armArt(top, PersonHeld.PARASOL))
+            assertEquals(PersonArt.ARM_CARDIGAN_PARASOL, PersonAnchors.armArt(top, PersonHeld.PARASOL))
             assertEquals(null, PersonAnchors.armArt(top, PersonHeld.UCHIWA))
         }
         assertEquals(PersonArt.ARM_KNITCOAT_OPEN, PersonAnchors.armArt(PersonTop.KNIT_COAT, PersonHeld.OPEN))
         assertEquals(PersonArt.ARM_KNITCOAT_FOLDING, PersonAnchors.armArt(PersonTop.KNIT_COAT, PersonHeld.FOLDED))
-        assertEquals(null, PersonAnchors.armArt(PersonTop.KNIT_COAT, PersonHeld.PARASOL))
+        assertEquals(PersonArt.ARM_KNITCOAT_PARASOL, PersonAnchors.armArt(PersonTop.KNIT_COAT, PersonHeld.PARASOL))
         assertEquals(null, PersonAnchors.armArt(PersonTop.DOWN, PersonHeld.OPEN))
         assertEquals(null, PersonAnchors.armArt(null, PersonHeld.OPEN))
         assertEquals(null, PersonAnchors.armArt(PersonTop.TSHIRT, PersonHeld.NONE))
@@ -503,10 +511,16 @@ class PersonFigureTest {
         assertEquals(PersonArt.FIG_RANK6_FOLDING, PersonAnchors.variantArt(PersonBase.RANK6_PORTRAIT, null, PersonHeld.FOLDED))
         assertEquals(PersonArt.FIG_RAINCOAT_OPEN, PersonAnchors.variantArt(PersonBase.RAINCOAT, null, PersonHeld.OPEN))
         assertEquals(PersonArt.FIG_RAINCOAT_FOLDING, PersonAnchors.variantArt(PersonBase.RAINCOAT, null, PersonHeld.FOLDED))
+        // v0.1.33: the parasol variants — the OPEN pictures with
+        // only the umbrella repainted — serve the portrait /
+        // raincoat bases on a parasol day.
+        assertEquals(PersonArt.FIG_RANK5_PARASOL, PersonAnchors.variantArt(PersonBase.RANK5_PORTRAIT, null, PersonHeld.PARASOL))
+        assertEquals(PersonArt.FIG_RANK6_PARASOL, PersonAnchors.variantArt(PersonBase.RANK6_PORTRAIT, null, PersonHeld.PARASOL))
+        assertEquals(PersonArt.FIG_RAINCOAT_PARASOL, PersonAnchors.variantArt(PersonBase.RAINCOAT, null, PersonHeld.PARASOL))
         for (base in listOf(PersonBase.BODY_A, PersonBase.BODY_B, PersonBase.BODY_C)) {
             assertEquals(null, PersonAnchors.variantArt(base, null, PersonHeld.OPEN))
         }
-        for (held in listOf(PersonHeld.NONE, PersonHeld.PARASOL, PersonHeld.UCHIWA)) {
+        for (held in listOf(PersonHeld.NONE, PersonHeld.UCHIWA)) {
             assertEquals(null, PersonAnchors.variantArt(PersonBase.RANK5_PORTRAIT, null, held))
             assertEquals(null, PersonAnchors.variantArt(PersonBase.RAINCOAT, null, held))
         }
@@ -538,8 +552,10 @@ class PersonFigureTest {
             Triple(PersonArt.ARM_POLO_UCHIWA, PersonBase.BODY_B, PersonBase.BODY_A),
             Triple(PersonArt.ARM_CARDIGAN_OPEN, PersonBase.BODY_A, PersonBase.BODY_A),
             Triple(PersonArt.ARM_CARDIGAN_FOLDING, PersonBase.BODY_A, PersonBase.BODY_A),
+            Triple(PersonArt.ARM_CARDIGAN_PARASOL, PersonBase.BODY_A, PersonBase.BODY_A),
             Triple(PersonArt.ARM_KNITCOAT_OPEN, PersonBase.BODY_A, PersonBase.BODY_A),
-            Triple(PersonArt.ARM_KNITCOAT_FOLDING, PersonBase.BODY_A, PersonBase.BODY_A)
+            Triple(PersonArt.ARM_KNITCOAT_FOLDING, PersonBase.BODY_A, PersonBase.BODY_A),
+            Triple(PersonArt.ARM_KNITCOAT_PARASOL, PersonBase.BODY_A, PersonBase.BODY_A)
         )
         val bl = 100f
         val pt = 200f
@@ -580,6 +596,40 @@ class PersonFigureTest {
         // its arm layer is retired (the prop + patch serves).
         assertEquals(379 to 487, PersonAnchors.armPx(PersonArt.ARM_POLO_UCHIWA))
         assertEquals(720 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_PARASOL))
+        // v0.1.33: the new parasols keep their rain layers' frames.
+        assertEquals(746 to 1024, PersonAnchors.armPx(PersonArt.ARM_CARDIGAN_PARASOL))
+        assertEquals(655 to 1024, PersonAnchors.armPx(PersonArt.ARM_KNITCOAT_PARASOL))
+    }
+
+    @Test fun v0133_parasolsFromTheRainPictures_stayPinned() {
+        // The v0.1.33 settlement (tools/audit33/): every parasol
+        // picture IS its rain picture with only the umbrella
+        // repainted, so the parasol anchors and inner rects equal
+        // the rain ones, value for value, in all three sleeve
+        // groups and on all three portrait bases.
+        assertEquals(
+            PersonAnchors.armAnchor(PersonArt.ARM_CARDIGAN_OPEN),
+            PersonAnchors.armAnchor(PersonArt.ARM_CARDIGAN_PARASOL)
+        )
+        assertEquals(
+            PersonAnchors.armAnchor(PersonArt.ARM_KNITCOAT_OPEN),
+            PersonAnchors.armAnchor(PersonArt.ARM_KNITCOAT_PARASOL)
+        )
+        for ((par, open) in listOf(
+            PersonArt.FIG_RANK5_PARASOL to PersonArt.FIG_RANK5_OPEN,
+            PersonArt.FIG_RANK6_PARASOL to PersonArt.FIG_RANK6_OPEN,
+            PersonArt.FIG_RAINCOAT_PARASOL to PersonArt.FIG_RAINCOAT_OPEN
+        )) {
+            assertTrue(
+                "$par inner == $open inner",
+                PersonAnchors.variantInner(par)
+                    .contentEquals(PersonAnchors.variantInner(open))
+            )
+        }
+        // And the parasol pads follow the rain days' pads.
+        assertEquals(0.17f, PersonFigure.padTopRatio(spec19(3, uvMax = 8.0)), 0.001f)
+        assertEquals(0.18f, PersonFigure.padTopRatio(spec19(4, uvMax = 8.0)), 0.001f)
+        assertEquals(0.17f, PersonFigure.padTopRatio(spec19(6, uvMax = 9.0)), 0.001f)
     }
 
     @Test fun v0132_centeredCanopyNumbers_stayPinned() {
@@ -662,6 +712,8 @@ class PersonFigureTest {
             PersonArt.FIG_RANK5_OPEN, PersonArt.FIG_RANK5_FOLDING,
             PersonArt.FIG_RANK6_OPEN, PersonArt.FIG_RANK6_FOLDING,
             PersonArt.FIG_RAINCOAT_OPEN, PersonArt.FIG_RAINCOAT_FOLDING,
+            PersonArt.FIG_RANK5_PARASOL, PersonArt.FIG_RANK6_PARASOL,
+            PersonArt.FIG_RAINCOAT_PARASOL,
             PersonArt.FIG_RANK0_PARASOL, PersonArt.FIG_RANK0_UCHIWA,
             PersonArt.FIG_RANK1_PARASOL, PersonArt.FIG_RANK1_UCHIWA
         )
@@ -698,11 +750,14 @@ class PersonFigureTest {
         }
         for (art in listOf(
             PersonArt.FIG_RANK5_OPEN, PersonArt.FIG_RANK6_OPEN,
-            PersonArt.FIG_RAINCOAT_OPEN
+            PersonArt.FIG_RAINCOAT_OPEN,
+            PersonArt.FIG_RANK5_PARASOL, PersonArt.FIG_RANK6_PARASOL,
+            PersonArt.FIG_RAINCOAT_PARASOL
         )) {
             val r = PersonAnchors.variantInner(art)
             // v0.1.27: rank 5's regenerated portrait re-measured
             // at y0 = 0.0818, just under the old 0.09 floor.
+            // v0.1.33: the parasol variants share the OPEN rects.
             assertTrue("$art figure lowered ${r[1]}", r[1] in 0.08f..0.18f)
         }
     }
