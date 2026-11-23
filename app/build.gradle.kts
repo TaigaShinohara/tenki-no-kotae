@@ -3,6 +3,7 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("io.github.takahirom.roborazzi")
 }
 
 // Persistent signing key in the project's .local/ (never the default debug
@@ -61,6 +62,13 @@ android {
             if (hasPersistentSigning) signingConfig = signingConfigs.getByName("persistent")
         }
     }
+    testOptions {
+        // Pre-delivery UI verification on the JVM (user standard
+        // 2026-11-23, AGENTS.md "Pre-delivery UI verification standard"):
+        // Robolectric + Roborazzi screenshot tests need the merged
+        // manifest/resources on the unit-test classpath.
+        unitTests.isIncludeAndroidResources = true
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -77,4 +85,9 @@ dependencies {
     // Real org.json for local unit tests (android.jar's copy is a stub whose
     // methods throw); lets the MET adapter parse tests run on the JVM.
     testImplementation("org.json:json:20240303")
+    // JVM screen verification (Robolectric + Roborazzi), the no-emulator
+    // pre-delivery standard (2026-11-23). See docs/VERIFICATION_SETUP.md.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.29.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-junit-rule:1.29.0")
 }

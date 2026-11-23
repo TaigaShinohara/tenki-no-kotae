@@ -1,0 +1,27 @@
+// Init script used by tools/run-unit-tests.sh: dumps the debug unit
+// test runtime classpath (exactly what Gradle's testDebugUnitTest task
+// would run with) to app/build/test-classpath.txt, so the tests can be
+// executed with a plain `java` JUnitCore run on this VM, where the
+// Gradle test worker process cannot start (see
+// docs/VERIFICATION_SETUP.md).
+//
+// The runner (tools/run-unit-tests.sh) invokes this together with
+// the classpath's producer tasks (compile, the runtime classes jar,
+// the resource apk for local tests, the test config) so every
+// intermediate on the classpath is fresh — running only the compile
+// task leaves e.g. the runtime classes jar stale, and the tests then
+// silently exercise old code.
+allprojects { project ->
+    project.tasks.register("printTestClasspath") {
+        doLast {
+            def t = project.tasks.findByName("testDebugUnitTest")
+            if (t == null) {
+                throw new GradleException("testDebugUnitTest not found in ${project.path}")
+            }
+            def out = new File(project.buildDir, "test-classpath.txt")
+            out.parentFile.mkdirs()
+            out.text = t.classpath.asPath
+            println "printTestClasspath: wrote ${out} (${t.classpath.files.size()} entries)"
+        }
+    }
+}
