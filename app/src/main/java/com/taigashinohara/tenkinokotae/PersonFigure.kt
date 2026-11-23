@@ -1103,18 +1103,20 @@ object PersonAnchors {
         // v0.1.32: the three OPEN layers (and the parasol) were
         // re-canvassed wider for the redrawn centred canopy —
         // polo/parasol 720, cardigan 746, knitcoat 655.
-        PersonArt.ARM_POLO_OPEN -> 720 to 1024
+        // v0.1.34: re-canvassed again for the new wide shallow
+        // dome (the canopy is now wider than the hair, centred on
+        // the head) — polo 880, cardigan 940, knitcoat 880; the
+        // parasols are repaints of the rain layers, same canvases.
+        PersonArt.ARM_POLO_OPEN -> 880 to 1024
         PersonArt.ARM_POLO_FOLDING -> 290 to 1024
-        PersonArt.ARM_POLO_PARASOL -> 720 to 1024
+        PersonArt.ARM_POLO_PARASOL -> 880 to 1024
         PersonArt.ARM_POLO_UCHIWA -> 379 to 487
-        PersonArt.ARM_CARDIGAN_OPEN -> 746 to 1024
+        PersonArt.ARM_CARDIGAN_OPEN -> 940 to 1024
         PersonArt.ARM_CARDIGAN_FOLDING -> 283 to 1024
-        // v0.1.33: the cardigan / knit-coat parasols are their
-        // rain layers repainted — same canvases (746 / 655).
-        PersonArt.ARM_CARDIGAN_PARASOL -> 746 to 1024
-        PersonArt.ARM_KNITCOAT_OPEN -> 655 to 1024
+        PersonArt.ARM_CARDIGAN_PARASOL -> 940 to 1024
+        PersonArt.ARM_KNITCOAT_OPEN -> 880 to 1024
         PersonArt.ARM_KNITCOAT_FOLDING -> 282 to 1024
-        PersonArt.ARM_KNITCOAT_PARASOL -> 655 to 1024
+        PersonArt.ARM_KNITCOAT_PARASOL -> 880 to 1024
         else -> 1 to 1
     }
 
@@ -1134,8 +1136,17 @@ object PersonAnchors {
         // the grip lands exactly where it did before (the joins
         // are unchanged), and the parasol takes the rain layer's
         // anchor verbatim as always.
+        // v0.1.34: the umbrella was redesigned from scratch (one
+        // parametric wide shallow dome for every layer and
+        // portrait, tools/audit34/design34.py) after the review
+        // found the v0.1.32 canopy's shape itself — a deep cone
+        // with ribs converging to a point — read as a pointed
+        // hat / kasa, worst on the white parasol. The layers were
+        // re-canvassed wider (kept pixels shifted, never redrawn)
+        // and the anchors re-solved so the grip stays on the
+        // fist's join point (tools/audit34/build_arm34.py).
         PersonArt.ARM_POLO_OPEN ->
-            ArmAnchor(0.72164f, 0.84f, 0.70860f, 1.38003f, 0.95f, 0f)
+            ArmAnchor(0.658615f, 0.84f, 0.647945f, 1.686703f, 0.95f, 0f)
         PersonArt.ARM_POLO_FOLDING ->
             ArmAnchor(0.40f, 0.40f, null, null, 0.70f, 12f)
         // v0.1.30: the parasol picture is the APPROVED rain
@@ -1156,30 +1167,36 @@ object PersonAnchors {
         // v0.1.32: rebuilt again by
         // tools/audit32/make_parasol_layer32.py from the redrawn
         // rain layer, same rule, alpha asserted identical.
+        // v0.1.34: rebuilt by tools/audit34/make_parasol_layers34.py
+        // from the redesigned rain layer, same rule, alpha
+        // asserted identical — the rain anchor verbatim.
         PersonArt.ARM_POLO_PARASOL ->
-            ArmAnchor(0.72164f, 0.84f, 0.70860f, 1.38003f, 0.95f, 0f)
+            ArmAnchor(0.658615f, 0.84f, 0.647945f, 1.686703f, 0.95f, 0f)
         PersonArt.ARM_POLO_UCHIWA ->
             ArmAnchor(0.235f, 0.842f, null, 0.690f, 0.351f, 0f)
+        // v0.1.34: re-canvassed to 940 wide; the apex also moved
+        // ~80 layer px left onto the head centre (the v0.1.32
+        // cardigan apex sat +47 composite px off-centre).
         PersonArt.ARM_CARDIGAN_OPEN ->
-            ArmAnchor(0.58555f, 0.84f, 0.56458f, 1.43003f, 0.95f, 0f)
+            ArmAnchor(0.613639f, 0.84f, 0.596996f, 1.801914f, 0.95f, 0f)
         // v0.1.33: the cardigan parasol is the cardigan rain layer
         // itself with only its umbrella repainted
         // (tools/audit33/make_parasol_layers33.py; alpha asserted
         // identical, sleeve cloth asserted unchanged) — the rain
         // layer's anchor verbatim, the polo rule extended.
         PersonArt.ARM_CARDIGAN_PARASOL ->
-            ArmAnchor(0.58555f, 0.84f, 0.56458f, 1.43003f, 0.95f, 0f)
+            ArmAnchor(0.613639f, 0.84f, 0.596996f, 1.801914f, 0.95f, 0f)
         PersonArt.ARM_CARDIGAN_FOLDING ->
             ArmAnchor(0.42f, 0.40f, null, null, 0.70f, 24f)
         PersonArt.ARM_KNITCOAT_OPEN ->
-            ArmAnchor(0.75382f, 0.85f, 0.73950f, 1.2576f, 0.95f, 0f)
+            ArmAnchor(0.686082f, 0.85f, 0.675423f, 1.689600f, 0.95f, 0f)
         // v0.1.33: same rule for the knit coat — its parasol is
         // the rain layer repainted under a spatial mask (the
         // coat's own sleeve cloth is navy, so the repaint is
         // bounded to the canopy + shaft + hook + ink outlines;
         // the sleeve interior is asserted unchanged).
         PersonArt.ARM_KNITCOAT_PARASOL ->
-            ArmAnchor(0.75382f, 0.85f, 0.73950f, 1.2576f, 0.95f, 0f)
+            ArmAnchor(0.686082f, 0.85f, 0.675423f, 1.689600f, 0.95f, 0f)
         PersonArt.ARM_KNITCOAT_FOLDING ->
             ArmAnchor(0.42f, 0.40f, null, null, 0.70f, 24f)
         else -> ArmAnchor(0.5f, 0.5f, null, null, 0f, 0f)
@@ -1362,27 +1379,34 @@ object PersonAnchors {
         // on rank 5, with shorter mufflers); the rects below are
         // re-measured on the new pictures with the measure26b
         // detectors (see docs/FEATURE_v0.1.27.md).
+        // v0.1.34: the OPEN portraits were re-canvassed wider
+        // (rank 5 +70 left, rank 6 +70, raincoat +30) so the
+        // redesigned wide dome — centred on the head, wider than
+        // the hair — fits its frame; the figure's pixels only
+        // shifted, so the inner rects are the old ones re-solved
+        // for the new widths (y untouched, pokes unchanged).
         PersonArt.FIG_RANK5_OPEN ->
-            floatArrayOf(0.0039f, 0.0818f, 0.8056f, 0.9999f)
+            floatArrayOf(0.13722f, 0.0818f, 0.83162f, 0.9999f)
         PersonArt.FIG_RANK5_FOLDING ->
             floatArrayOf(0.0002f, -0.0011f, 1.0002f, 1.0000f)
         PersonArt.FIG_RANK6_OPEN ->
-            floatArrayOf(0.0037f, 0.1361f, 0.8830f, 0.9999f)
+            floatArrayOf(0.1386f, 0.1361f, 0.89884f, 0.9999f)
         PersonArt.FIG_RANK6_FOLDING ->
             floatArrayOf(0.0016f, -0.0023f, 0.9756f, 1.0000f)
         PersonArt.FIG_RAINCOAT_OPEN ->
-            floatArrayOf(0.0624f, 0.1690f, 0.7201f, 0.9998f)
+            floatArrayOf(0.12858f, 0.1690f, 0.73986f, 0.9998f)
         PersonArt.FIG_RAINCOAT_FOLDING ->
             floatArrayOf(-0.0001f, -0.0007f, 0.8948f, 1.0000f)
         // v0.1.33: the parasol variants are repaints of the OPEN
         // pictures (not a pixel moved), so their inner rects are
-        // the OPEN rects verbatim.
+        // the OPEN rects verbatim. (v0.1.34: still true — the
+        // parasols are repaints of the new OPEN pictures.)
         PersonArt.FIG_RANK5_PARASOL ->
-            floatArrayOf(0.0039f, 0.0818f, 0.8056f, 0.9999f)
+            floatArrayOf(0.13722f, 0.0818f, 0.83162f, 0.9999f)
         PersonArt.FIG_RANK6_PARASOL ->
-            floatArrayOf(0.0037f, 0.1361f, 0.8830f, 0.9999f)
+            floatArrayOf(0.1386f, 0.1361f, 0.89884f, 0.9999f)
         PersonArt.FIG_RAINCOAT_PARASOL ->
-            floatArrayOf(0.0624f, 0.1690f, 0.7201f, 0.9998f)
+            floatArrayOf(0.12858f, 0.1690f, 0.73986f, 0.9998f)
         // v0.1.29: measured on the new portraits with
         // tools/audit29/measure29.py — ink anchors (the eye
         // spacing sets the width scale, the eye line and the

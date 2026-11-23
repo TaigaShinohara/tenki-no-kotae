@@ -584,21 +584,23 @@ class PersonFigureTest {
         // v0.1.32: the OPEN layers were re-canvassed wider for
         // the redrawn centred canopy (polo/parasol 720, cardigan
         // 746, knitcoat 655); the folding frames are untouched.
-        assertEquals(720 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_OPEN))
-        assertEquals(746 to 1024, PersonAnchors.armPx(PersonArt.ARM_CARDIGAN_OPEN))
-        assertEquals(655 to 1024, PersonAnchors.armPx(PersonArt.ARM_KNITCOAT_OPEN))
+        // v0.1.34: re-canvassed again for the wide shallow dome
+        // (polo 880, cardigan 940, knitcoat 880).
+        assertEquals(880 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_OPEN))
+        assertEquals(940 to 1024, PersonAnchors.armPx(PersonArt.ARM_CARDIGAN_OPEN))
+        assertEquals(880 to 1024, PersonAnchors.armPx(PersonArt.ARM_KNITCOAT_OPEN))
         assertEquals(283 to 1024, PersonAnchors.armPx(PersonArt.ARM_CARDIGAN_FOLDING))
         assertEquals(282 to 1024, PersonAnchors.armPx(PersonArt.ARM_KNITCOAT_FOLDING))
         // v0.1.30: the parasol picture is the rain umbrella's
-        // own frame (720×1024 since v0.1.32) with only its
+        // own frame (880×1024 since v0.1.34) with only its
         // canopy repainted.
         // The v0.1.28 fan picture keeps its frame as a record —
         // its arm layer is retired (the prop + patch serves).
         assertEquals(379 to 487, PersonAnchors.armPx(PersonArt.ARM_POLO_UCHIWA))
-        assertEquals(720 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_PARASOL))
+        assertEquals(880 to 1024, PersonAnchors.armPx(PersonArt.ARM_POLO_PARASOL))
         // v0.1.33: the new parasols keep their rain layers' frames.
-        assertEquals(746 to 1024, PersonAnchors.armPx(PersonArt.ARM_CARDIGAN_PARASOL))
-        assertEquals(655 to 1024, PersonAnchors.armPx(PersonArt.ARM_KNITCOAT_PARASOL))
+        assertEquals(940 to 1024, PersonAnchors.armPx(PersonArt.ARM_CARDIGAN_PARASOL))
+        assertEquals(880 to 1024, PersonAnchors.armPx(PersonArt.ARM_KNITCOAT_PARASOL))
     }
 
     @Test fun v0133_parasolsFromTheRainPictures_stayPinned() {
@@ -632,30 +634,53 @@ class PersonFigureTest {
         assertEquals(0.17f, PersonFigure.padTopRatio(spec19(6, uvMax = 9.0)), 0.001f)
     }
 
-    @Test fun v0132_centeredCanopyNumbers_stayPinned() {
-        // The v0.1.32 canopy rebuild (tools/audit32/): the
-        // anchors were re-solved on the redrawn pictures so the
-        // grip and the shaft's join land exactly where the old
-        // pictures put them, while the canopy — drawn wider
-        // (dwFrac up from 1.20) — centres its apex on the head.
+    @Test fun v0134_wideDomeNumbers_stayPinned() {
+        // The v0.1.34 umbrella redesign (tools/audit34/): the
+        // v0.1.32 canopy's shape itself was the limit — a deep
+        // cone with ribs converging to a point read as a pointed
+        // hat / kasa, worst on the white parasol, and it was
+        // narrower than the hair. One parametric design
+        // (design34.py: a wide, shallow dome, ribs on gentle
+        // curves off a small apex cap, a knob instead of a spike)
+        // now draws every umbrella; the layers were re-canvassed
+        // wider (kept pixels shifted, never redrawn) and the
+        // anchors re-solved so the grip stays on the fist's join
+        // point. These pins supersede the v0.1.32 ones.
         val polo = PersonAnchors.armAnchor(PersonArt.ARM_POLO_OPEN)
-        assertEquals(0.72164f, polo.gripX, 0.00001f)
+        assertEquals(0.658615f, polo.gripX, 0.00001f)
         assertEquals(0.84f, polo.gripY, 0.00001f)
-        assertEquals(0.70860f, polo.shaftX!!, 0.00001f)
-        assertEquals(1.38003f, polo.dwFrac!!, 0.00001f)
+        assertEquals(0.647945f, polo.shaftX!!, 0.00001f)
+        assertEquals(1.686703f, polo.dwFrac!!, 0.00001f)
         assertEquals(0.95f, polo.dhFrac, 0.00001f)
         val cardigan = PersonAnchors.armAnchor(PersonArt.ARM_CARDIGAN_OPEN)
-        assertEquals(0.58555f, cardigan.gripX, 0.00001f)
-        assertEquals(0.56458f, cardigan.shaftX!!, 0.00001f)
-        assertEquals(1.43003f, cardigan.dwFrac!!, 0.00001f)
+        assertEquals(0.613639f, cardigan.gripX, 0.00001f)
+        assertEquals(0.596996f, cardigan.shaftX!!, 0.00001f)
+        assertEquals(1.801914f, cardigan.dwFrac!!, 0.00001f)
         val knit = PersonAnchors.armAnchor(PersonArt.ARM_KNITCOAT_OPEN)
-        assertEquals(0.75382f, knit.gripX, 0.00001f)
+        assertEquals(0.686082f, knit.gripX, 0.00001f)
         assertEquals(0.85f, knit.gripY, 0.00001f)
-        assertEquals(0.73950f, knit.shaftX!!, 0.00001f)
-        assertEquals(1.2576f, knit.dwFrac!!, 0.00001f)
+        assertEquals(0.675423f, knit.shaftX!!, 0.00001f)
+        assertEquals(1.689600f, knit.dwFrac!!, 0.00001f)
         // The parasol still takes the rain layer's anchor
-        // verbatim (the v0.1.30 rule, re-proven in v0.1.32).
+        // verbatim (the v0.1.30 rule, re-proven every version).
         assertEquals(polo, PersonAnchors.armAnchor(PersonArt.ARM_POLO_PARASOL))
+        // The portraits were re-canvassed too (rank 5 +70 left,
+        // rank 6 +70, raincoat +30): inner rects re-solved in x
+        // only — the pokes (and so the pads) are unchanged.
+        val r5 = PersonAnchors.variantInner(PersonArt.FIG_RANK5_OPEN)
+        assertEquals(0.13722f, r5[0], 0.00001f)
+        assertEquals(0.0818f, r5[1], 0.00001f)
+        assertEquals(0.83162f, r5[2], 0.00001f)
+        assertEquals(0.9999f, r5[3], 0.00001f)
+        val r6 = PersonAnchors.variantInner(PersonArt.FIG_RANK6_OPEN)
+        assertEquals(0.1386f, r6[0], 0.00001f)
+        assertEquals(0.1361f, r6[1], 0.00001f)
+        assertEquals(0.89884f, r6[2], 0.00001f)
+        val rc = PersonAnchors.variantInner(PersonArt.FIG_RAINCOAT_OPEN)
+        assertEquals(0.12858f, rc[0], 0.00001f)
+        assertEquals(0.1690f, rc[1], 0.00001f)
+        assertEquals(0.73986f, rc[2], 0.00001f)
+        assertEquals(0.9998f, rc[3], 0.00001f)
     }
 
     @Test fun v0127_auditFixNumbers_stayPinned() {
