@@ -798,9 +798,10 @@ class PersonFigureTest {
         // 0.089 → pad 0.10), rank 6's lower (poke 0.158 → 0.17).
         assertEquals(0.10f, PersonFigure.padTopRatio(spec19(5, Rules.UmbrellaLevel.NEED)), 0.001f)
         assertEquals(0.17f, PersonFigure.padTopRatio(spec19(6, Rules.UmbrellaLevel.NEED)), 0.001f)
-        // Rank 3 + NEED is a raincoat day: the raincoat variant's
-        // canopy room is the tallest of the set.
-        assertEquals(0.21f, PersonFigure.padTopRatio(spec19(3, Rules.UmbrellaLevel.NEED)), 0.001f)
+        // Rank 3 + NEED is a raincoat day: v0.1.35 subtracts the
+        // 0.084 empty top margin of raincoat_umbrella_open so the
+        // raincoat figure matches other ranks' scale (pad 0.11).
+        assertEquals(0.11f, PersonFigure.padTopRatio(spec19(3, Rules.UmbrellaLevel.NEED)), 0.001f)
         // The cardigan / knit-coat arm canopies (test-screen
         // combos: the auto rules make ranks 2–4 umbrella days into
         // raincoat days) measure like the polo one.
@@ -1033,10 +1034,16 @@ class PersonFigureTest {
                 )
                 val poke = maxOf(0f, -r[1] / ph)
                 val spec = spec19(3).copy(base = base, head = head)
-                assertTrue(
-                    "$base $head poke $poke within pad",
-                    poke <= PersonFigure.padTopRatio(spec) + 0.001f
-                )
+                if (base == PersonBase.RAINCOAT) {
+                    // v0.1.35: head layers are suppressed on the
+                    // hooded raincoat base, so they add no top pad.
+                    assertEquals(0f, PersonFigure.padTopRatio(spec), 0.001f)
+                } else {
+                    assertTrue(
+                        "$base $head poke $poke within pad",
+                        poke <= PersonFigure.padTopRatio(spec) + 0.001f
+                    )
+                }
             }
         }
         // The layer anchors themselves stay as measured.
@@ -1110,5 +1117,35 @@ class PersonFigureTest {
         val p = PersonAnchors.MASK_PAINT
         assertTrue(p[0] < p[2] && p[1] < p[3])
         assertTrue(p.all { it in 0f..1f })
+    }
+
+    @Test fun v0135_sunglassesWidthAndRaincoatHead_stayPinned() {
+        // Sunglasses use headTarget width on every base so BODY_A
+        // (stale rig.faceW 0.499) and RAINCOAT (hood opening 0.542)
+        // draw at the same natural width (~0.169 ph) as other bases.
+        for (base in PersonBase.values()) {
+            val wInPh = PersonAnchors.sunglassesWidth(base) *
+                PersonCanvas.bodyAspect(base)
+            assertTrue("$base sunglasses width $wInPh", wInPh in 0.165f..0.175f)
+        }
+        assertTrue(PersonAnchors.HEAD_CLIP_Y in 0.16f..0.20f)
+        assertEquals(0.85f, PersonCanvas.topCal(PersonTop.SHIRT)[0], 0.001f)
+        assertEquals(0.009f, PersonCanvas.topCal(PersonTop.SHIRT)[3], 0.001f)
+        // Raincoat suppresses head layers (hood already covers head)
+        // and subtracts empty top margin from OPEN/PARASOL poke.
+        assertEquals(
+            0f,
+            PersonFigure.padTopRatio(
+                spec19(3).copy(base = PersonBase.RAINCOAT, top = null, head = PersonHead.CAP)
+            ),
+            0.001f
+        )
+        assertEquals(
+            0.11f,
+            PersonFigure.padTopRatio(
+                spec19(3).copy(base = PersonBase.RAINCOAT, top = null, held = PersonHeld.PARASOL)
+            ),
+            0.001f
+        )
     }
 }

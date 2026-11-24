@@ -437,7 +437,7 @@ object PersonFigure {
                 }
             }
         }
-        if (spec.head != PersonHead.NONE) {
+        if (spec.head != PersonHead.NONE && spec.base != PersonBase.RAINCOAT) {
             val poke = PersonAnchors.headLayerPoke(spec.base, spec.head)
             pad = maxOf(pad, ceil((poke + 0.005f) * 100f) / 100f)
         }
@@ -627,7 +627,10 @@ object PersonCanvas {
         // height terms were measured to make no difference and
         // stay. (tools/illust_fixes/ 小4.)
         PersonTop.TSHIRT -> floatArrayOf(0.64f, 0.875f, 0f, 0.028f)
-        PersonTop.SHIRT -> floatArrayOf(0.80f, 0.80f, 0f, 0.014f)
+        // v0.1.35: widen 0.80 -> 0.85 and lift dy 0.014 -> 0.009 so
+        // the shirt covers BODY_A's shoulder and outer-sleeve outline
+        // without a double line (collar 0.318, hem 0.609, width 0.640).
+        PersonTop.SHIRT -> floatArrayOf(0.85f, 0.80f, 0f, 0.009f)
         PersonTop.CARDIGAN -> floatArrayOf(0.55f, 0.45f, 0f, -0.003f)
         PersonTop.LIGHT_OUTER -> floatArrayOf(0.63f, 0.625f, 0f, 0.000f)
         PersonTop.KNIT_COAT -> floatArrayOf(0.67f, 0.60f, 0f, 0.011f)
@@ -925,10 +928,25 @@ object PersonAnchors {
     const val MASK_DROP = 0.020f
     val MASK_PAINT = floatArrayOf(0.125f, 0.027f, 0.874f, 0.973f)
 
-    /** Sunglasses: width / face width; centered on the measured eye
-     * line ([PersonRig.eyeY]) — until v0.1.20 they were centered at
-     * 0.57 of the skin-box height, which is the mouth line. */
+    /** Base-hair clip line (v0.1.35, body height fraction): when a
+     * head layer is worn on a non-raincoat base without an overhead
+     * variant canopy, the base is clipped below this line so its
+     * original top afro hair never pokes out behind the cap or knit
+     * cap. */
+    const val HEAD_CLIP_Y = 0.18f
+
+    /** Sunglasses: width / measured face width ([headTarget]);
+     * centered on the measured face centre x and eye line
+     * ([PersonRig.eyeY]). v0.1.35 switched from rig.faceW to
+     * headTarget width so BODY_A (stale faceW 0.499) and RAINCOAT
+     * (hood opening 0.542) match the other bases (~0.151 ph). */
     const val SUNG_W = 1.12f
+
+    /** Sunglasses drawn width as a fraction of the body width. */
+    fun sunglassesWidth(base: PersonBase): Float {
+        val t = headTarget(base)
+        return SUNG_W * (t[2] - t[0])
+    }
 
     /** Muffler (the asset is cropped to its worn length at keying
      * time): height / body height; its top. Sized down in v0.1.21
@@ -1148,7 +1166,7 @@ object PersonAnchors {
         PersonArt.ARM_POLO_OPEN ->
             ArmAnchor(0.658615f, 0.84f, 0.647945f, 1.686703f, 0.95f, 0f)
         PersonArt.ARM_POLO_FOLDING ->
-            ArmAnchor(0.40f, 0.40f, null, null, 0.70f, 12f)
+            ArmAnchor(0.39f, 0.435f, null, null, 0.70f, 14f)
         // v0.1.30: the parasol picture is the APPROVED rain
         // umbrella arm layer itself with only its canopy
         // repainted in the parasol family's colours
@@ -1187,7 +1205,7 @@ object PersonAnchors {
         PersonArt.ARM_CARDIGAN_PARASOL ->
             ArmAnchor(0.613639f, 0.84f, 0.596996f, 1.801914f, 0.95f, 0f)
         PersonArt.ARM_CARDIGAN_FOLDING ->
-            ArmAnchor(0.42f, 0.40f, null, null, 0.70f, 24f)
+            ArmAnchor(0.40f, 0.435f, null, null, 0.70f, 20f)
         PersonArt.ARM_KNITCOAT_OPEN ->
             ArmAnchor(0.686082f, 0.85f, 0.675423f, 1.689600f, 0.95f, 0f)
         // v0.1.33: same rule for the knit coat — its parasol is
@@ -1198,7 +1216,7 @@ object PersonAnchors {
         PersonArt.ARM_KNITCOAT_PARASOL ->
             ArmAnchor(0.686082f, 0.85f, 0.675423f, 1.689600f, 0.95f, 0f)
         PersonArt.ARM_KNITCOAT_FOLDING ->
-            ArmAnchor(0.42f, 0.40f, null, null, 0.70f, 24f)
+            ArmAnchor(0.40f, 0.435f, null, null, 0.70f, 20f)
         else -> ArmAnchor(0.5f, 0.5f, null, null, 0f, 0f)
     }
 
@@ -1426,17 +1444,29 @@ object PersonAnchors {
         else -> floatArrayOf(0f, 0f, 1f, 1f)
     }
 
+    /** Top transparent margin of a variant PNG (fraction of its
+     * height), so [variantPoke] only reserves headroom for visible
+     * canopy pixels. raincoat_umbrella_open / _parasol have 86 px
+     * (0.084) of empty space above the canopy; without subtracting
+     * it, padTopRatio jumped to 0.21 and shrank the raincoat figure
+     * noticeably smaller than other ranks. */
+    fun variantContentTop(art: PersonArt): Float = when (art) {
+        PersonArt.FIG_RAINCOAT_OPEN, PersonArt.FIG_RAINCOAT_PARASOL -> 0.084f
+        else -> 0f
+    }
+
     /** How far a variant picture extends above the person top
      * when its inner rect is landed on the person rect, as a
      * fraction of the person height (the canopy's room):
-     * innerTop / innerHeight. [PersonFigure.padTopRatio] pads
-     * by this. */
+     * (innerTop - contentTop) / innerHeight. [PersonFigure.padTopRatio]
+     * pads by this. */
     fun variantPoke(
         base: PersonBase, top: PersonTop?, held: PersonHeld
     ): Float {
         val art = variantArt(base, top, held) ?: return 0f
         val r = variantInner(art)
-        return maxOf(0f, r[1] / (r[3] - r[1]))
+        val topPad = variantContentTop(art)
+        return maxOf(0f, (r[1] - topPad) / (r[3] - r[1]))
     }
 }
 
@@ -1555,6 +1585,16 @@ object PersonComposer {
         // lands exactly on the standard person rect, so every rig
         // anchor below stays true and no held item is drawn.
         val variant = PersonAnchors.variantArt(spec.base, spec.top, spec.held)
+        val clipBaseHair = spec.head != PersonHead.NONE &&
+            spec.base != PersonBase.RAINCOAT &&
+            !(variant != null && (spec.held == PersonHeld.OPEN || spec.held == PersonHeld.PARASOL))
+        if (clipBaseHair) {
+            canvas.save()
+            canvas.clipRect(
+                left - width, pt + PersonAnchors.HEAD_CLIP_Y * ph,
+                left + width * 2f, top + height * 2f
+            )
+        }
         val bl: Float
         val bw: Float
         if (variant != null) {
@@ -1610,6 +1650,9 @@ object PersonComposer {
                     paint
                 )
             }
+        }
+        if (clipBaseHair) {
+            canvas.restore()
         }
 
         fun bx(f: Float) = bl + f * bw
@@ -1725,24 +1768,14 @@ object PersonComposer {
         // ---- head (v0.1.25: hair + hat as ONE picture — the head
         //      layer replaces the base's hair wholesale, its face
         //      anchored onto the rig's; see
-        //      [PersonAnchors.headLayerRect]. The standalone cap /
-        //      knit cap props are retired: laid over the hair
-        //      separately they kept sitting slightly off it, so
-        //      the hat now arrives already worn) ----
-        if (spec.head != PersonHead.NONE) {
-            // v0.1.27: the raincoat base wears its own head-layer
-            // variants, clipped to the hood opening — the standard
-            // layers' hair spilled over the hood's rim and the hat
-            // sat on top of the hood. Same canvas and face
-            // anchors, so the rect below is unchanged.
-            val rain = spec.base == PersonBase.RAINCOAT
-            val art = when {
-                spec.head == PersonHead.CAP && rain ->
-                    PersonArt.LAYER_HEAD_CAP_RAIN
-                spec.head == PersonHead.CAP ->
-                    PersonArt.LAYER_HEAD_CAP
-                rain -> PersonArt.LAYER_HEAD_KNITCAP_RAIN
-                else -> PersonArt.LAYER_HEAD_KNITCAP
+        //      [PersonAnchors.headLayerRect]. v0.1.35: suppressed on
+        //      the hooded raincoat base, which already covers the
+        //      head cleanly without a second hat/hair layer) ----
+        if (spec.head != PersonHead.NONE && !raincoatBase) {
+            val art = if (spec.head == PersonHead.CAP) {
+                PersonArt.LAYER_HEAD_CAP
+            } else {
+                PersonArt.LAYER_HEAD_KNITCAP
             }
             val img = bmp(ctx, art)
             val r = PersonAnchors.headLayerRect(
@@ -1761,9 +1794,10 @@ object PersonComposer {
         if (spec.mask) {
             val img = bmp(ctx, PersonArt.PROP_MASK)
             val p = PersonAnchors.MASK_PAINT
+            val t = PersonAnchors.headTarget(spec.base)
             val rectW = PersonAnchors.MASK_W * rig.cheekW * bw / (p[2] - p[0])
             val rectH = PersonAnchors.MASK_H * ph / (p[3] - p[1])
-            val mLeft = bx(rig.faceCx) - (p[0] + p[2]) / 2f * rectW
+            val mLeft = bx((t[0] + t[2]) / 2f) - (p[0] + p[2]) / 2f * rectW
             val mTop = by(rig.eyeY + PersonAnchors.MASK_DROP) - p[1] * rectH
             canvas.drawBitmap(
                 img, null,
@@ -1772,12 +1806,14 @@ object PersonComposer {
         }
         if (spec.sunglasses) {
             val img = bmp(ctx, PersonArt.PROP_SUNGLASSES)
-            val w = PersonAnchors.SUNG_W * rig.faceW * bw
+            val t = PersonAnchors.headTarget(spec.base)
+            val w = PersonAnchors.sunglassesWidth(spec.base) * bw
             val h = w * img.height / img.width
+            val cx = bx((t[0] + t[2]) / 2f)
             val cy = by(rig.eyeY)
             canvas.drawBitmap(
                 img, null,
-                RectF(bx(rig.faceCx) - w / 2f, cy - h / 2f, bx(rig.faceCx) + w / 2f, cy + h / 2f),
+                RectF(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f),
                 paint
             )
         }
