@@ -171,6 +171,7 @@ enum class PersonArt {
     TOP_TSHIRT, TOP_SHIRT, TOP_CARDIGAN, TOP_LIGHTOUTER, TOP_KNITCOAT, TOP_DOWN,
     OUTFIT_RAINCOAT,
     LAYER_HEAD_CAP, LAYER_HEAD_KNITCAP,
+    HEAD_CAP_ONLY, HEAD_KNITCAP_ONLY,
     // v0.1.27: the raincoat base's own head layers, clipped to
     // the hood opening (same canvas, same face anchors).
     LAYER_HEAD_CAP_RAIN, LAYER_HEAD_KNITCAP_RAIN,
@@ -228,7 +229,11 @@ data class PersonSpec(
     val sunglasses: Boolean,
     val mittens: Boolean,
     val held: PersonHeld
-)
+) {
+    /** The raincoat's hood already covers the head. */
+    val visibleHead: PersonHead
+        get() = if (base == PersonBase.RAINCOAT) PersonHead.NONE else head
+}
 
 object PersonFigure {
 
@@ -437,8 +442,9 @@ object PersonFigure {
                 }
             }
         }
-        if (spec.head != PersonHead.NONE && spec.base != PersonBase.RAINCOAT) {
-            val poke = PersonAnchors.headLayerPoke(spec.base, spec.head)
+        val head = spec.visibleHead
+        if (head != PersonHead.NONE) {
+            val poke = PersonAnchors.headLayerPoke(spec.base, head)
             pad = maxOf(pad, ceil((poke + 0.005f) * 100f) / 100f)
         }
         return pad
@@ -1520,6 +1526,8 @@ object PersonComposer {
         PersonArt.OUTFIT_RAINCOAT -> R.drawable.outfit_raincoat
         PersonArt.LAYER_HEAD_CAP -> R.drawable.layer_head_cap
         PersonArt.LAYER_HEAD_KNITCAP -> R.drawable.layer_head_knitcap
+        PersonArt.HEAD_CAP_ONLY -> R.drawable.head_cap_only
+        PersonArt.HEAD_KNITCAP_ONLY -> R.drawable.head_knitcap_only
         PersonArt.LAYER_HEAD_CAP_RAIN -> R.drawable.layer_head_cap_rain
         PersonArt.LAYER_HEAD_KNITCAP_RAIN -> R.drawable.layer_head_knitcap_rain
         PersonArt.PROP_MASK -> R.drawable.prop_mask
@@ -1585,9 +1593,10 @@ object PersonComposer {
         // lands exactly on the standard person rect, so every rig
         // anchor below stays true and no held item is drawn.
         val variant = PersonAnchors.variantArt(spec.base, spec.top, spec.held)
-        val clipBaseHair = spec.head != PersonHead.NONE &&
-            spec.base != PersonBase.RAINCOAT &&
-            !(variant != null && (spec.held == PersonHeld.OPEN || spec.held == PersonHeld.PARASOL))
+        val hasUmbrellaPortrait = variant != null &&
+            (spec.held == PersonHeld.OPEN || spec.held == PersonHeld.PARASOL)
+        val head = spec.visibleHead
+        val clipBaseHair = head != PersonHead.NONE && !hasUmbrellaPortrait
         if (clipBaseHair) {
             canvas.save()
             canvas.clipRect(
@@ -1771,15 +1780,17 @@ object PersonComposer {
         //      [PersonAnchors.headLayerRect]. v0.1.35: suppressed on
         //      the hooded raincoat base, which already covers the
         //      head cleanly without a second hat/hair layer) ----
-        if (spec.head != PersonHead.NONE && !raincoatBase) {
-            val art = if (spec.head == PersonHead.CAP) {
-                PersonArt.LAYER_HEAD_CAP
+        if (head != PersonHead.NONE) {
+            // The open umbrella portrait already contains the hair, raised
+            // arm and grip. Draw only the hat so replacement hair cannot cover them.
+            val art = if (head == PersonHead.CAP) {
+                if (hasUmbrellaPortrait) PersonArt.HEAD_CAP_ONLY else PersonArt.LAYER_HEAD_CAP
             } else {
-                PersonArt.LAYER_HEAD_KNITCAP
+                if (hasUmbrellaPortrait) PersonArt.HEAD_KNITCAP_ONLY else PersonArt.LAYER_HEAD_KNITCAP
             }
             val img = bmp(ctx, art)
             val r = PersonAnchors.headLayerRect(
-                spec.head, spec.base, bl, pt, bw, ph
+                head, spec.base, bl, pt, bw, ph
             )
             canvas.drawBitmap(
                 img, null,
