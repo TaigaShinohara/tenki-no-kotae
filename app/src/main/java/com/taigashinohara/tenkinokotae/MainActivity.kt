@@ -412,7 +412,9 @@ class MainActivity : Activity() {
     }
 
     private fun nowMinutesFloat(): Float {
-        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Tokyo"))
+        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Tokyo")).apply {
+            timeInMillis = System.currentTimeMillis()
+        }
         return cal.get(java.util.Calendar.HOUR_OF_DAY) * 60f +
             cal.get(java.util.Calendar.MINUTE) + cal.get(java.util.Calendar.SECOND) / 60f
     }
@@ -434,8 +436,7 @@ class MainActivity : Activity() {
         if (today == null || today.hours.isEmpty()) {
             return SkyWeather(0f, 0f, 0, snow = false, fog = false)
         }
-        val nowH = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Tokyo"))
-            .get(java.util.Calendar.HOUR_OF_DAY)
+        val nowH = (nowMinutesFloat() / 60).toInt()
         val e = today.hour(nowH) ?: today.hours.minByOrNull { kotlin.math.abs(it.hour - nowH) }
             ?: return SkyWeather(0f, 0f, 0, snow = false, fog = false)
         var cloud = 0.4f
@@ -1702,7 +1703,7 @@ class MainActivity : Activity() {
                 PersonHeld.UCHIWA -> append("、うちわを持っている")
                 PersonHeld.NONE -> Unit
             }
-            when (personSpec.head) {
+            when (personSpec.visibleHead) {
                 PersonHead.CAP -> append("、帽子をかぶっている")
                 PersonHead.KNITCAP -> append("、ニット帽をかぶっている")
                 PersonHead.NONE -> Unit
@@ -1995,8 +1996,7 @@ class MainActivity : Activity() {
             text = city().name
             textSize = 13f; setTextColor(sub)
         })
-        val nowHour = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Tokyo"))
-            .get(java.util.Calendar.HOUR_OF_DAY)
+        val nowHour = (nowMinutesFloat() / 60).toInt()
         val cur = today.hour(nowHour)
         val pres = Rules.pressure(today, sensitivity())
         val sortedHours = today.hours.sortedBy { it.hour }
@@ -2600,8 +2600,12 @@ class MainActivity : Activity() {
         ) { testOutfit = it - 1; showPersonTest() }
 
         label("頭")
-        control(listOf("自動", "なし", "帽子", "ニット帽"), testHead + 1) {
-            testHead = it - 1; showPersonTest()
+        if (spec.base == PersonBase.RAINCOAT) {
+            col.addView(sectionDesc("レインコートのフードをかぶります"))
+        } else {
+            control(listOf("自動", "なし", "帽子", "ニット帽"), testHead + 1) {
+                testHead = it - 1; showPersonTest()
+            }
         }
 
         label("顔")

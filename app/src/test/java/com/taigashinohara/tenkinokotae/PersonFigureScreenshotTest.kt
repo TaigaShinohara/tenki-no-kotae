@@ -60,6 +60,30 @@ class PersonFigureScreenshotTest {
     }
 
     @Test
+    fun rainUmbrella_rank5WithCap() {
+        // The cap must leave the pale fist and the umbrella shaft visible.
+        val spec = PersonFigure.spec(5, Rules.UmbrellaLevel.NEED, uvMax = 6.0)
+        assertEquals(PersonHead.CAP, spec.visibleHead)
+        render(spec, "figure_rain_rank5_cap.png")
+    }
+
+    @Test
+    fun rainUmbrella_rank6WithKnitCapAndMask() {
+        val spec = PersonFigure.spec(
+            6, Rules.UmbrellaLevel.NEED, uvMax = 1.0, snow = true, daytimeHumidityAvg = 35.0
+        )
+        assertEquals(PersonHead.KNITCAP, spec.visibleHead)
+        render(spec, "figure_rain_rank6_knitcap.png")
+    }
+
+    @Test
+    fun compactUmbrella_rank3() {
+        val spec = PersonFigure.spec(3, Rules.UmbrellaLevel.FOLDING, uvMax = 1.0)
+        assertEquals(PersonHeld.FOLDED, spec.held)
+        render(spec, "figure_folding_rank3.png")
+    }
+
+    @Test
     fun raincoat_rank3() {
         // Ranks 2..4 on a 傘がいる day wear the raincoat outfit.
         val spec = PersonFigure.spec(3, Rules.UmbrellaLevel.NEED, uvMax = 1.0)

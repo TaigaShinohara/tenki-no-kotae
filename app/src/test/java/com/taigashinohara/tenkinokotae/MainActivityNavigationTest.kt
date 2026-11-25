@@ -115,6 +115,15 @@ class MainActivityNavigationTest {
             "person test should host the figure",
             ScreenshotSupport.hasInstance(activity.window.decorView, PersonView::class.java)
         )
+        val decor = activity.window.decorView
+        assertNotNull(ScreenshotSupport.findByText(decor, "ニット帽"))
+        ScreenshotSupport.findByText(decor, "雨")!!.performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertNotNull(ScreenshotSupport.findByText(decor, "レインコートのフードをかぶります"))
+        assertNull(ScreenshotSupport.findByText(decor, "ニット帽"))
+        ScreenshotSupport.findByText(decor, "3")!!.performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertNotNull(ScreenshotSupport.findByText(decor, "ニット帽"))
         val back = ScreenshotSupport.findByText(activity.window.decorView, "設定にもどる")
         assertNotNull("person test should offer a way back", back)
         back!!.performClick()

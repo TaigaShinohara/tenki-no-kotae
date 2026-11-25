@@ -86,6 +86,8 @@ class SkyView(ctx: Context) : View(ctx) {
             invalidate()
         }
 
+    internal var clockMillis: () -> Long = System::currentTimeMillis
+
     // ---------- animation loop ----------
 
     private val choreographer = Choreographer.getInstance()
@@ -254,7 +256,9 @@ class SkyView(ctx: Context) : View(ctx) {
 
     /** Current time in Asia/Tokyo, in minutes (fractional). */
     private fun nowMinutes(): Float {
-        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Tokyo"))
+        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Tokyo")).apply {
+            timeInMillis = clockMillis()
+        }
         return cal.get(java.util.Calendar.HOUR_OF_DAY) * 60f +
             cal.get(java.util.Calendar.MINUTE) +
             cal.get(java.util.Calendar.SECOND) / 60f
@@ -442,9 +446,9 @@ class SkyView(ctx: Context) : View(ctx) {
                 style = Paint.Style.STROKE
                 strokeWidth = 1.4f * d
                 strokeCap = Paint.Cap.ROUND
-                color = if (st.dark) Color.rgb(0xCF, 0xE4, 0xF2) else Color.rgb(0x5B, 0x7A, 0x94)
                 // v0.1.10: thinner presence over the glass (was 115 / 100).
-                alpha = if (st.dark) 82 else 92
+                color = if (st.dark) Color.argb(82, 0xCF, 0xE4, 0xF2)
+                    else Color.argb(92, 0x5B, 0x7A, 0x94)
             }
             val active = st.rainLevel * 30
             drops.forEachIndexed { i, dr ->
@@ -459,8 +463,7 @@ class SkyView(ctx: Context) : View(ctx) {
         // 8) Snowflakes (front), slow with a gentle sway.
         if (st.snow) {
             val fp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = if (st.dark) Color.WHITE else Color.rgb(0xC7, 0xD6, 0xE2)
-                alpha = 190
+                color = withAlpha(if (st.dark) Color.WHITE else Color.rgb(0xC7, 0xD6, 0xE2), 190)
             }
             for (f in flakes) {
                 val fx = f.x * w + sin(elapsedSec * 0.7f + f.phase) * 8f * d

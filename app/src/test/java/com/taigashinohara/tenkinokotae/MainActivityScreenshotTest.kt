@@ -65,7 +65,11 @@ class MainActivityScreenshotTest {
      */
     private fun capture(activity: MainActivity, golden: String) {
         ScreenshotSupport.repinClock()
-        val bitmap = ScreenshotSupport.drawToBitmap(activity.window.decorView)
+        val decor = activity.window.decorView
+        ScreenshotSupport.allViews(decor).filterIsInstance<SkyView>().forEach {
+            it.clockMillis = ScreenshotSupport::fixedNowMillis
+        }
+        val bitmap = ScreenshotSupport.drawToBitmap(decor)
         ScreenshotSupport.assertNotBlank(bitmap, golden)
         ScreenshotSupport.captureGolden(bitmap, golden)
     }
