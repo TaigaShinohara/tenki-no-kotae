@@ -300,34 +300,106 @@ object Rules {
         return "明日： ${word.phrase}。$umb"
     }
 
+    // ---------- 夜間モード（明日の主表示、v0.1.36） ----------
+
+    /** 夜間モードへの切替時刻（時）。この時刻以降、ホームの主表示は明日になる。 */
+    const val NIGHT_SWITCH_HOUR = 19
+
+    /** ホームの主表示が指す日。 */
+    enum class HomeDay { TODAY, TOMORROW }
+
+    /** 時刻だけから決まる自動の主表示。 */
+    fun autoHomeDay(hourOfDay: Int): HomeDay =
+        if (hourOfDay >= NIGHT_SWITCH_HOUR) HomeDay.TOMORROW else HomeDay.TODAY
+
+    /**
+     * ホームの主表示の決定：夜間（[NIGHT_SWITCH_HOUR] 以降）で明日の
+     * データが実在し、手動で今日に戻されていない時だけ TOMORROW。
+     * 明日のデータが無い時に明日表示のふりはしない（呼び出し側は
+     * 今日表示のまま＋理由の注記に落とす）。
+     */
+    fun resolveHomeDay(
+        hourOfDay: Int, manualToday: Boolean, tomorrowAvailable: Boolean
+    ): HomeDay =
+        if (!manualToday && tomorrowAvailable &&
+            autoHomeDay(hourOfDay) == HomeDay.TOMORROW
+        ) HomeDay.TOMORROW else HomeDay.TODAY
+
+    /** "2026-11-27" -> "11/27（金）"。パースできない文字列はそのまま返す。 */
+    fun dateLabel(dateStr: String): String {
+        val d = try {
+            java.time.LocalDate.parse(dateStr)
+        } catch (e: Exception) {
+            return dateStr
+        }
+        val dow = when (d.dayOfWeek) {
+            java.time.DayOfWeek.MONDAY -> "月"
+            java.time.DayOfWeek.TUESDAY -> "火"
+            java.time.DayOfWeek.WEDNESDAY -> "水"
+            java.time.DayOfWeek.THURSDAY -> "木"
+            java.time.DayOfWeek.FRIDAY -> "金"
+            java.time.DayOfWeek.SATURDAY -> "土"
+            java.time.DayOfWeek.SUNDAY -> "日"
+        }
+        return "${d.monthValue}/${d.dayOfMonth}（$dow）"
+    }
+
+    /**
+     * 今夜の1行（夜間モードで、明日の主表示の脇に今日の要約として
+     * 残す）。[eveningLine] と同じ材料（夕方以降の雨と冷え）を、
+     * 「帰り」ではなく「今夜」の言葉で言う。
+     */
+    fun tonightLine(day: DayForecast): String {
+        val night = day.hours.filter { it.hour in NIGHT_SWITCH_HOUR..23 }
+        val src = if (night.isEmpty()) day.hours.filter { it.hour in 17..23 } else night
+        val rain = src.any { it.precip >= 0.1 || (it.precipProb ?: 0) >= 50 }
+        val cold = src.isNotEmpty() &&
+            src.map { it.apparent }.average() <= daytimeAvg(day) - 5.0
+        return when {
+            rain && cold -> "今夜： 雨も冷えもあり。傘＋羽織りを"
+            rain -> "今夜： 雨が降りそう。傘を忘れずに"
+            cold -> "今夜： ぐっと冷える。羽織りを足して"
+            else -> "今夜もそのままでOK"
+        }
+    }
+
     // ---------- 結論 ----------
 
-    fun conclusion(today: DayForecast, yesterday: DayForecast, feelOffset: Int): String {
+    /**
+     * [base] は比較相手の呼び名（"昨日" が既定、明日表示では "今日"）、
+     * [dayWord] は表示する日そのものの呼び名（絶対評価へ落ちる時に使う）。
+     */
+    fun conclusion(
+        today: DayForecast, yesterday: DayForecast, feelOffset: Int,
+        base: String = "昨日", dayWord: String = "今日"
+    ): String {
         // 前日比は「同じ時間同士」で比べる。共通の日中時間が無い日
         // （予備源を夕方以降に取得し、今日に日中データが無い場合）は、
         // 夜の平均と昨日の日中を引いて「昨日より寒い」を作らず、
         // 昨日の無い時と同じ絶対評価に切り替える。
         val matched = matchedDaytimeAvgs(today, yesterday)
-            ?: return conclusionNoYesterday(today, feelOffset)
-        val diff = diffWord(matched.first - matched.second)
+            ?: return conclusionNoYesterday(today, feelOffset, dayWord)
+        val diff = diffWord(matched.first - matched.second, base)
         val lead = clothing(today, feelOffset).lead
         return "${diff.phrase}。$lead"
     }
 
     /**
      * 昨日のデータが無い時（予備源のみで表示する時）の結論。
-     * 前日比の代わりに、今日の日中体感温度そのものの評価（服装帯と連動）＋服装の一文。
+     * 前日比の代わりに、その日の日中体感温度そのものの評価（服装帯と連動）＋服装の一文。
      */
-    fun conclusionNoYesterday(today: DayForecast, feelOffset: Int): String {
+    fun conclusionNoYesterday(
+        today: DayForecast, feelOffset: Int, dayWord: String = "今日"
+    ): String {
         val avg = daytimeAvg(today)
         val feel = when {
-            avg >= 28.0 -> "今日はかなり暑い"
-            avg >= 23.0 -> "今日は暖かい"
-            avg >= 18.0 -> "今日は過ごしやすい暖かさ"
-            avg >= 13.0 -> "今日は少し肌寒い"
-            avg >= 8.0 -> "今日は寒い"
-            avg >= 3.0 -> "今日はしっかり寒い"
-            else -> "今日は凍える寒さ"
+            avg >= 28.0 -> "${dayWord}はかなり暑い"
+            avg >= 23.0 -> "${dayWord}は暖かい"
+            avg >= 18.0 -> "${dayWord}は過ごしやすい暖かさ"
+            avg >= 13.0 -> "${dayWord}は少し肌寒い"
+            avg >= 8.0 -> "${dayWord}は寒い"
+            avg >= 3.0 -> "${dayWord}はしっかり寒い"
+            else -> "${dayWord}は凍える寒さ"
         }
         return "$feel。${clothing(today, feelOffset).lead}"
     }

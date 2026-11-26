@@ -170,6 +170,16 @@ import kotlin.math.roundToInt
  *   becomes two — one above, one below — so the leftover splits
  *   evenly and the figure floats at the center of the gap between
  *   the conclusion and the chips.
+ * - v0.1.36 (night mode, docs/FEATURE_v0.1.36.md): the user asked
+ *   that opening the app at night show tomorrow ("夜見たときは明日
+ *   の天気を見れるように"). From Rules.NIGHT_SWITCH_HOUR (19:00)
+ *   Home's main display — conclusion, the three answers, the α
+ *   line, the person — is generated from tomorrow, compared
+ *   against today; a dated 「明日 M/d（曜）」 label and a one-tap
+ *   「今日を見る」 in the header keep the days unmistakable, and
+ *   tonight survives as one small line. With no tomorrow data,
+ *   Home stays on today and says why. Detail gains a dated
+ *   明日の要点 card. The sky and the widget stay on today.
  * Logic (Rules / WeatherApi / MetApi) is untouched by the design pass.
  */
 class MainActivity : Activity() {
@@ -419,6 +429,14 @@ class MainActivity : Activity() {
             cal.get(java.util.Calendar.MINUTE) + cal.get(java.util.Calendar.SECOND) / 60f
     }
 
+    /** Current hour of day in Asia/Tokyo — the night-mode switch reads it. */
+    private fun nowHourTokyo(): Int {
+        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Tokyo")).apply {
+            timeInMillis = System.currentTimeMillis()
+        }
+        return cal.get(java.util.Calendar.HOUR_OF_DAY)
+    }
+
     private data class SkyWeather(
         val cloudiness: Float, val cloudDark: Float,
         val rainLevel: Int, val snow: Boolean, val fog: Boolean
@@ -527,6 +545,13 @@ class MainActivity : Activity() {
      * the state survives rebuilds within the session.
      */
     private var detailExpanded = false
+    /**
+     * Night mode (v0.1.36): the user tapped 「今日を見る」 on the
+     * auto-tomorrow Home and pinned the display back to today. Kept
+     * for as long as this display session lasts (never persisted);
+     * [Rules.resolveHomeDay] reads it on every Home build.
+     */
+    private var homeManualToday = false
 
     /**
      * 見た目テスト (v0.1.19) slot overrides: -1 is 自動 (the day's own
@@ -1507,9 +1532,13 @@ class MainActivity : Activity() {
      *   22dp line height + 5dp gaps between them.
      */
     private fun homeFixedHeightDp(
-        fit: ConclusionFit, hasGapNote: Boolean, chipAnswerLines: Int, smallLineCount: Int
+        fit: ConclusionFit, hasGapNote: Boolean, chipAnswerLines: Int, smallLineCount: Int,
+        headerExtraDp: Float = 0f
     ): Float {
-        var h = 32f + 21f
+        // headerExtraDp: night mode's header row grows by the toggle's
+        // vertical padding (v0.1.36); today mode's header is the bare
+        // 21dp city line as before.
+        var h = 32f + 21f + headerExtraDp
         h += 10f + fit.lines.size * (fit.sizeSp * 1.22f).toInt()
         if (hasGapNote) h += 34f
         h += 30 + 4 + 20 + 2 + chipAnswerLines * 20
@@ -1544,19 +1573,45 @@ class MainActivity : Activity() {
         val tomorrow = f.day(shiftedStr(1))
         if (today == null) { showError("今日のデータがありません", network = false); return }
 
-        val tone = dayTone(Rules.daytimeAvg(today))
-        // The day's three answers, computed once: the chips, the
-        // person and the widget snapshot all read the same values.
-        val clothing = Rules.clothing(today, feelOffset())
-        val umb = Rules.umbrella(today)
-        val sun = Rules.sunscreen(today.uvMax)
+        // Night mode (v0.1.36, the user's request — 夜見たときは明日を):
+        // from Rules.NIGHT_SWITCH_HOUR on, Home's main display becomes
+        // tomorrow. Everything the screen is made of — the conclusion,
+        // the three answers, the α (pressure) line, the gap note and
+        // 今日の人 — is generated from the *displayed* day, and the
+        // comparison base shifts with it: tomorrow is measured against
+        // today with the same matched-hours rule (Rules.conclusion's
+        // base / dayWord). Tonight itself is not erased: it stays as
+        // one small line (Rules.tonightLine). When tomorrow's data is
+        // not really there, Home stays on today and says why in the
+        // small lines — a tomorrow display is never faked from absent
+        // data. The sky and the widget snapshot keep describing today
+        // (the sky is *now*; the widget is today's glance) — only
+        // Home's main display turns.
+        val hourNow = nowHourTokyo()
+        val tomorrowUsable = tomorrow != null && tomorrow.hours.isNotEmpty()
+        val tomorrowMode = Rules.resolveHomeDay(hourNow, homeManualToday, tomorrowUsable) ==
+            Rules.HomeDay.TOMORROW
+        val nightNoTomorrow = !tomorrowMode && !homeManualToday &&
+            Rules.autoHomeDay(hourNow) == Rules.HomeDay.TOMORROW && !tomorrowUsable
+        val disp = if (tomorrowMode) tomorrow!! else today
+        val prev = if (tomorrowMode) today else yesterday
+        val dispWord = if (tomorrowMode) "明日" else "今日"
+        val prevWord = if (tomorrowMode) "今日" else "昨日"
+
+        val tone = dayTone(Rules.daytimeAvg(disp))
+        // The displayed day's three answers, computed once: the chips
+        // and the person read the same values. (The widget snapshot
+        // computes its own from today, further down.)
+        val clothing = Rules.clothing(disp, feelOffset())
+        val umb = Rules.umbrella(disp)
+        val sun = Rules.sunscreen(disp.uvMax)
         // The pressure line and the gap note are also computed here,
         // ahead of the views: since v0.1.18 the person's height is
         // sized from the day's fixed parts (homeFixedHeightDp), and
         // whether these two exist is part of that sum. The small
         // lines further down read the same values.
-        val pres = Rules.pressure(today, sensitivity())
-        val gapNoteText = Rules.gapNote(today)
+        val pres = Rules.pressure(disp, sensitivity())
+        val gapNoteText = Rules.gapNote(disp)
         // Editorial layout (v0.1.13, the B5 pattern): no cards on
         // Home. The sky itself is the surface — the conclusion is set
         // in display type directly on it, the three answers are a row
@@ -1573,14 +1628,50 @@ class MainActivity : Activity() {
             // room that lets 今日の人 grow (docs/FIX_v0.1.15.md).
             setPadding(dp(20), dp(20), dp(20), dp(12))
         }
-        // Header carries the city only (v0.1.7, minimal-information pass):
-        // the date was a constant — this screen always shows today — so
-        // it carried no information, only glyphs. The city can change
-        // (8 places in Settings), so it stays.
-        col.addView(TextView(this).apply {
+        // Header carries the city only in today mode (v0.1.7,
+        // minimal-information pass): the date was a constant — this
+        // screen always showed today — so it carried no information,
+        // only glyphs. The city can change (8 places in Settings), so
+        // it stays. Night mode (v0.1.36) breaks that constant, so the
+        // header grows exactly what keeps the two days unmistakable:
+        // a dated, accented 「明日 11/27（金）」 label, and — only
+        // while the auto-tomorrow display is up — the small one-tap
+        // way back to today. Once tapped, today is pinned for this
+        // display session (homeManualToday) and the toggle goes away.
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(TextView(this).apply {
             text = city().name
             textSize = 13f; setTextColor(sub)
         })
+        if (tomorrowMode) {
+            header.addView(TextView(this).apply {
+                text = "明日 ${Rules.dateLabel(disp.date)}"
+                textSize = 13f; setTextColor(tone.accent)
+                setTypeface(null, Typeface.BOLD)
+                setPadding(dp(10), 0, 0, 0)
+            })
+            header.addView(
+                View(this),
+                LinearLayout.LayoutParams(0, 1, 1f)
+            )
+            header.addView(TextView(this).apply {
+                text = "今日を見る"
+                textSize = 13f; setTextColor(sub)
+                setPadding(dp(10), dp(6), dp(2), dp(6))
+                background = ghostBg(24)
+                isClickable = true
+                isFocusable = true
+                contentDescription = "今日の天気を見る"
+                setOnClickListener {
+                    homeManualToday = true
+                    showScreen(0)
+                }
+            })
+        }
+        col.addView(header)
 
         // Element groups are staged in, in importance order, when
         // fresh data has just arrived (stageIn below).
@@ -1590,10 +1681,10 @@ class MainActivity : Activity() {
         val conclusionGroup = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        val conclusionText = if (yesterday != null) {
-            Rules.conclusion(today, yesterday, feelOffset())
+        val conclusionText = if (prev != null) {
+            Rules.conclusion(disp, prev, feelOffset(), base = prevWord, dayWord = dispWord)
         } else {
-            Rules.conclusionNoYesterday(today, feelOffset())
+            Rules.conclusionNoYesterday(disp, feelOffset(), dispWord)
         }
         val sentences = conclusionSentences(conclusionText)
         // v0.1.17: the size is fitted by measurement so the two
@@ -1659,27 +1750,36 @@ class MainActivity : Activity() {
         val umbChip = umb.title
         val sunChip = sun.title.removePrefix("日焼け止めは").removePrefix("日焼け止め")
             .replace(" ＋ ", "＋")
-        // How many small lines today — counted under the same
-        // conditions the lines block below adds them.
+        // How many small lines the displayed day has — counted under
+        // the same conditions the lines block below adds them. The
+        // evening/tonight slot is always exactly one line; the 明日
+        // line exists only in today mode (in night mode tomorrow *is*
+        // the screen), and the no-tomorrow-data note only on the
+        // night fallback.
         val smallLineCount = (if (backupMode) 1 else 0) + (if (staleCache) 1 else 0) +
-            (if (pres.visible) 1 else 0) + 1 + (if (tomorrow != null) 1 else 0)
+            (if (nightNoTomorrow) 1 else 0) +
+            (if (pres.visible) 1 else 0) + 1 +
+            (if (!tomorrowMode && tomorrow != null) 1 else 0)
         // The person's full variation (v0.1.19): the layered spec
         // also reads the day's snow codes and the 9–18時 feel /
         // humidity averages (the knit cap, the neck towel, the
         // mask). Its top pad (a parasol day needs headroom) is part
         // of the height budget, so the spec comes before the sizing.
+        // Night mode dresses the person for the displayed day —
+        // tomorrow (v0.1.36).
         val personSpec = PersonFigure.spec(
-            clothing.rank, umb.level, today.uvMax,
-            snow = today.hours.any { it.weatherCode in PersonFigure.SNOW_CODES },
-            daytimeFeelAvg = Rules.daytimeFeelAvg(today),
-            daytimeHumidityAvg = Rules.daytimeHumidityAvg(today)
+            clothing.rank, umb.level, disp.uvMax,
+            snow = disp.hours.any { it.weatherCode in PersonFigure.SNOW_CODES },
+            daytimeFeelAvg = Rules.daytimeFeelAvg(disp),
+            daytimeHumidityAvg = Rules.daytimeHumidityAvg(disp)
         )
         val personH = PersonFigure.heightDp(
             homeColumnHeightDp(),
             homeFixedHeightDp(
                 fit, gapNoteText != null,
                 chipAnswerLines(listOf(clothingChip, umbChip, sunChip)),
-                smallLineCount
+                smallLineCount,
+                headerExtraDp = if (tomorrowMode) 12f else 0f
             ),
             PersonFigure.padTopRatio(personSpec)
         )
@@ -1694,7 +1794,7 @@ class MainActivity : Activity() {
         }
         val person = PersonView(this, personSpec)
         person.contentDescription = buildString {
-            append("今日の服装：").append(clothing.title)
+            append("${dispWord}の服装：").append(clothing.title)
             if (personSpec.base == PersonBase.RAINCOAT) append("、レインコートを着ている")
             when (personSpec.held) {
                 PersonHeld.OPEN -> append("、傘を持っている")
@@ -1751,7 +1851,7 @@ class MainActivity : Activity() {
             answerChip(umbrellaIcon(umb.level), "傘", umbChip, tone), chipLp()
         )
         chips.addView(
-            answerChip(sunscreenIcon(today.uvMax), "日焼け止め", sunChip, tone), chipLp()
+            answerChip(sunscreenIcon(disp.uvMax), "日焼け止め", sunChip, tone), chipLp()
         )
         col.addView(chips)
         intro.add(chips)
@@ -1791,6 +1891,16 @@ class MainActivity : Activity() {
                 textSize = 13f; setTextColor(sub)
             })
         }
+        if (nightNoTomorrow) {
+            // Night, but tomorrow's data never arrived: Home stayed
+            // on today (Rules.resolveHomeDay) and says so — the user
+            // asked for tomorrow at night, so the absence is stated,
+            // not silently passed over (v0.1.36).
+            addLine(TextView(this).apply {
+                text = "明日のデータが届いていないため、今日を表示しています"
+                textSize = 13f; setTextColor(sub)
+            })
+        }
         if (pres.visible) {
             // The α-frame advice joins the small lines at the same
             // rank (v0.1.13): title only — the timing and the action
@@ -1799,9 +1909,17 @@ class MainActivity : Activity() {
             // sizing needs it.)
             addLine(smallLine(pressureIcon(pres.level), "気圧", pres.title, ink))
         }
-        addLine(smallLine(IconKind.MOON, "帰り", Rules.eveningLine(today), ink))
-        if (tomorrow != null) {
-            addLine(smallLine(IconKind.SUN, "明日", Rules.tomorrowLine(today, tomorrow), sub))
+        if (tomorrowMode) {
+            // Tonight survives as one line (v0.1.36): the moon mark,
+            // today's evening material in tonight's words. The 帰り /
+            // 明日 lines belong to the today display and are not
+            // repeated here.
+            addLine(smallLine(IconKind.MOON, "今夜", Rules.tonightLine(today), ink))
+        } else {
+            addLine(smallLine(IconKind.MOON, "帰り", Rules.eveningLine(disp), ink))
+            if (tomorrow != null) {
+                addLine(smallLine(IconKind.SUN, "明日", Rules.tomorrowLine(today, tomorrow), sub))
+            }
         }
         col.addView(lines)
         intro.add(lines)
@@ -1820,20 +1938,31 @@ class MainActivity : Activity() {
 
         // Widget snapshot (v0.1.14): every Home display refreshes what
         // the launcher widget shows. The widget never fetches — it
-        // only reads this. Short forms match the chips on this very
-        // screen, so the launcher and the app never disagree. The
-        // accent is the dark variant: the widget face is fixed dark.
+        // only reads this. Short forms match the chips, so the
+        // launcher and the app never disagree. The accent is the dark
+        // variant: the widget face is fixed dark. Night mode does not
+        // turn the widget (v0.1.36): the snapshot is always *today's*
+        // answers, computed from today here even while Home's main
+        // display shows tomorrow.
+        val snapClothing = Rules.clothing(today, feelOffset())
+        val snapUmb = Rules.umbrella(today)
+        val snapSun = Rules.sunscreen(today.uvMax)
+        val snapConclusion = if (yesterday != null) {
+            Rules.conclusion(today, yesterday, feelOffset())
+        } else {
+            Rules.conclusionNoYesterday(today, feelOffset())
+        }
         WidgetSnapshot.save(
             this,
             WidgetSnapshot.Data(
                 city = city().name,
-                headline = sentences.firstOrNull() ?: conclusionText,
-                clothing = clothing.title.replace(" ＋ ", "＋").replace(" ／ ", "／"),
-                umbrella = umb.title,
-                sunscreen = sun.title.removePrefix("日焼け止めは")
+                headline = conclusionSentences(snapConclusion).firstOrNull() ?: snapConclusion,
+                clothing = snapClothing.title.replace(" ＋ ", "＋").replace(" ／ ", "／"),
+                umbrella = snapUmb.title,
+                sunscreen = snapSun.title.removePrefix("日焼け止めは")
                     .removePrefix("日焼け止め").replace(" ＋ ", "＋"),
-                rank = clothing.rank,
-                umbrellaLevel = umb.level.name,
+                rank = snapClothing.rank,
+                umbrellaLevel = snapUmb.level.name,
                 uvMax = today.uvMax,
                 snow = today.hours.any { it.weatherCode in PersonFigure.SNOW_CODES },
                 daytimeFeelAvg = Rules.daytimeFeelAvg(today),
@@ -2246,6 +2375,37 @@ class MainActivity : Activity() {
                 )
             }
             col.addView(foldCard)
+        }
+
+        // ---- 明日の要点 (v0.1.36): Home turns into tomorrow's screen
+        // at night, so Detail keeps the matching minimum for tomorrow
+        // — the three answers and the day's headline figures, dated.
+        // No second chart and no hourly table: the full numeric
+        // record stays today's, tomorrow gets its 要点 only.
+        val tomorrow = f.day(shiftedStr(1))
+        if (tomorrow != null && tomorrow.hours.isNotEmpty()) {
+            val tCard = glassCard(tone, 12)
+            tCard.addView(TextView(this).apply {
+                text = "明日 ${Rules.dateLabel(tomorrow.date)}"
+                textSize = 16f; setTextColor(ink)
+                setTypeface(null, Typeface.BOLD)
+            })
+            val tClothing = Rules.clothing(tomorrow, feelOffset())
+            val tUmb = Rules.umbrella(tomorrow)
+            val tSun = Rules.sunscreen(tomorrow.uvMax)
+            detailRow(tCard, "服装", tClothing.title)
+            detailRow(tCard, "傘", "${tUmb.title}（${tUmb.note}）")
+            detailRow(tCard, "日焼け止め", tSun.title)
+            detailRow(
+                tCard, "気温",
+                "最高 ${fmt(tomorrow.tempMax)}℃ ／ 最低 ${fmt(tomorrow.tempMin)}℃"
+            )
+            detailRow(
+                tCard,
+                if (Rules.hasDaytimeHours(tomorrow)) "体感温度（日中平均）" else "体感温度（平均）",
+                "${fmt(Rules.daytimeAvg(tomorrow))}℃"
+            )
+            col.addView(tCard)
         }
 
         // Attribution stays visible under the data it describes (CC BY

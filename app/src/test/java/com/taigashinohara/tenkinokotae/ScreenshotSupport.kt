@@ -126,6 +126,29 @@ object ScreenshotSupport {
         android.os.SystemClock.setCurrentTimeMillis(fixedNowMillis())
     }
 
+    private var nightPinCache: Long = 0L
+
+    /**
+     * The frozen "night": the pin day at 20:00 — past the app's
+     * NIGHT_SWITCH_HOUR (19), so Home builds its tomorrow display.
+     * Derived from [fixedNowMillis] (+10 h) so it is always later
+     * than the day pin (the paused clock cannot move backward) and
+     * on the same sandbox date. The app's *date* still comes from
+     * java.time (real clock), so the seeded cache's tomorrow is the
+     * day the night screen must show.
+     */
+    fun fixedNightMillis(): Long {
+        if (nightPinCache == 0L) {
+            nightPinCache = fixedNowMillis() + 10L * 60 * 60 * 1000
+        }
+        return nightPinCache
+    }
+
+    /** Re-pins the sandbox wall clock to the frozen night (20:00). */
+    fun repinNightClock() {
+        android.os.SystemClock.setCurrentTimeMillis(fixedNightMillis())
+    }
+
     /**
      * Waits until the activity's background weather fetch has settled
      * (its failure/success re-render included). The fetch runs on real

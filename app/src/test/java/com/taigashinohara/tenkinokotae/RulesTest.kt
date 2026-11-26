@@ -144,6 +144,77 @@ class RulesTest {
         assertTrue(Rules.conclusion(today, yesterday, 0).contains("少し寒い"))
     }
 
+    // ---------- 夜間モード（v0.1.36） ----------
+
+    @Test fun nightSwitch_boundary() {
+        assertEquals(Rules.HomeDay.TODAY, Rules.autoHomeDay(0))
+        assertEquals(Rules.HomeDay.TODAY, Rules.autoHomeDay(18))
+        assertEquals(Rules.HomeDay.TOMORROW, Rules.autoHomeDay(19))
+        assertEquals(Rules.HomeDay.TOMORROW, Rules.autoHomeDay(23))
+        assertEquals(19, Rules.NIGHT_SWITCH_HOUR)
+    }
+
+    @Test fun resolveHomeDay_conditions() {
+        // 夜＋明日データあり＋自動 → 明日
+        assertEquals(
+            Rules.HomeDay.TOMORROW,
+            Rules.resolveHomeDay(20, manualToday = false, tomorrowAvailable = true)
+        )
+        // 手動で今日に戻したら、その表示中は今日を維持
+        assertEquals(
+            Rules.HomeDay.TODAY,
+            Rules.resolveHomeDay(20, manualToday = true, tomorrowAvailable = true)
+        )
+        // 明日のデータが無ければ今日のまま（あるふりをしない）
+        assertEquals(
+            Rules.HomeDay.TODAY,
+            Rules.resolveHomeDay(20, manualToday = false, tomorrowAvailable = false)
+        )
+        // 昼は常に今日
+        assertEquals(
+            Rules.HomeDay.TODAY,
+            Rules.resolveHomeDay(10, manualToday = false, tomorrowAvailable = true)
+        )
+    }
+
+    @Test fun dateLabel_weekday() {
+        assertEquals("11/27（金）", Rules.dateLabel("2026-11-27"))
+        assertEquals("1/1（木）", Rules.dateLabel("2026-01-01"))
+        assertEquals("変な文字列", Rules.dateLabel("変な文字列"))
+    }
+
+    @Test fun tonightLine_variants() {
+        // 穏やかな夜
+        assertEquals("今夜もそのままでOK", Rules.tonightLine(day()))
+        // 夜だけ雨
+        val rainy = day(
+            prob = { if (it >= 19) 60 else 0 },
+            precip = { if (it >= 19) 0.5 else 0.0 }
+        )
+        assertEquals("今夜： 雨が降りそう。傘を忘れずに", Rules.tonightLine(rainy))
+        // 夜だけ冷える（日中15℃ → 夜5℃）
+        val cold = day(apparent = { if (it >= 19) 5.0 else 15.0 })
+        assertEquals("今夜： ぐっと冷える。羽織りを足して", Rules.tonightLine(cold))
+        // 雨＋冷え
+        val both = day(
+            apparent = { if (it >= 19) 5.0 else 15.0 },
+            prob = { if (it >= 19) 60 else 0 },
+            precip = { if (it >= 19) 0.5 else 0.0 }
+        )
+        assertEquals("今夜： 雨も冷えもあり。傘＋羽織りを", Rules.tonightLine(both))
+    }
+
+    @Test fun conclusion_tomorrowBase() {
+        // 明日表示の結論は「今日より〜」で始まり、物差しは従来どおり
+        val today = day(apparent = { 15.0 })
+        val tomorrow = day(apparent = { 10.0 })
+        val text = Rules.conclusion(tomorrow, today, 0, base = "今日", dayWord = "明日")
+        assertTrue(text.startsWith("今日より少し寒い。"))
+        // 絶対評価へ落ちる時も「明日は〜」と言う
+        val noPrev = Rules.conclusionNoYesterday(tomorrow, 0, "明日")
+        assertTrue(noPrev.startsWith("明日は"))
+    }
+
     @Test fun gapNote_largeGap() {
         val d = day(apparent = { if (it in 12..15) 20.0 else 10.0 })
         assertEquals("夜は冷える。羽織りを足して", Rules.gapNote(d))

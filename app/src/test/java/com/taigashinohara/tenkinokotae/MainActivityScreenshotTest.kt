@@ -63,11 +63,16 @@ class MainActivityScreenshotTest {
      * the wall clock at draw time, and Robolectric's clock cannot be
      * held to the second (see ScreenshotSupport.captureGolden).
      */
-    private fun capture(activity: MainActivity, golden: String) {
-        ScreenshotSupport.repinClock()
+    private fun capture(activity: MainActivity, golden: String) =
+        captureWith(activity, golden, night = false)
+
+    private fun captureWith(activity: MainActivity, golden: String, night: Boolean) {
+        if (night) ScreenshotSupport.repinNightClock() else ScreenshotSupport.repinClock()
         val decor = activity.window.decorView
         ScreenshotSupport.allViews(decor).filterIsInstance<SkyView>().forEach {
-            it.clockMillis = ScreenshotSupport::fixedNowMillis
+            it.clockMillis =
+                if (night) ScreenshotSupport::fixedNightMillis
+                else ScreenshotSupport::fixedNowMillis
         }
         val bitmap = ScreenshotSupport.drawToBitmap(decor)
         ScreenshotSupport.assertNotBlank(bitmap, golden)
@@ -99,6 +104,55 @@ class MainActivityScreenshotTest {
             ScreenshotSupport.hasInstance(decor, PersonView::class.java)
         )
         capture(activity, "home.png")
+    }
+
+    @Test
+    fun home_nightShowsTomorrow() {
+        val activity = launch()
+        // Move the sandbox clock to 20:00 — past the 19:00 switch —
+        // and re-show Home: the main display becomes tomorrow's.
+        ScreenshotSupport.repinNightClock()
+        val decor = activity.window.decorView
+        val home = ScreenshotSupport.findByContentDescription(decor, "ホーム")
+        assertNotNull("home tab not found", home)
+        home!!.performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        // The dated tomorrow label is up (the today-mode 明日 small
+        // line starts with 「明日：」, the label with 「明日 」).
+        val label = ScreenshotSupport.textViews(decor).firstOrNull {
+            it.text?.toString()?.startsWith("明日 ") == true
+        }
+        assertNotNull("night home should carry the dated tomorrow label", label)
+        // The one-tap way back to today is offered, and tonight's
+        // own line survives next to tomorrow's display.
+        assertNotNull(
+            "night home should offer the back-to-today toggle",
+            ScreenshotSupport.findByContentDescription(decor, "今日の天気を見る")
+        )
+        assertNotNull(
+            "night home should keep tonight's line",
+            ScreenshotSupport.textViews(decor).firstOrNull {
+                it.text?.toString()?.startsWith("今夜") == true
+            }
+        )
+        captureWith(activity, "home_night.png", night = true)
+        // The toggle pins today for this display session: the label
+        // and the toggle both go away, the 帰り line returns.
+        ScreenshotSupport.findByContentDescription(decor, "今日の天気を見る")!!
+            .performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        org.junit.Assert.assertNull(
+            "after the toggle, the tomorrow label should be gone",
+            ScreenshotSupport.textViews(decor).firstOrNull {
+                it.text?.toString()?.startsWith("明日 ") == true
+            }
+        )
+        assertNotNull(
+            "after the toggle, the evening line should be back",
+            ScreenshotSupport.textViews(decor).firstOrNull {
+                it.text?.toString()?.startsWith("帰り") == true
+            }
+        )
     }
 
     @Test
