@@ -195,6 +195,18 @@ import kotlin.math.roundToInt
  *   day's color survives only as the widget headline's color.
  *   Every text pair was re-scanned against the new grounds
  *   (weakest: sub on the light night sky top, 4.58:1).
+ * - v0.1.38 (the sky follows the weather, docs/FEATURE_v0.1.38.md):
+ *   at the user's request — "keep this mood, but let it change
+ *   with the weather and the time" — the fixed palette now takes
+ *   a weather cast on top of the phase mixes: seven groups
+ *   (clear / partly / cloudy / rain / snow / thunder / fog, from
+ *   the current hour's weather code, shared with the widget via
+ *   SkyView's skyGroupForCode) pull each stop toward a scanned
+ *   anchor, and the conclusion's glow thins as the cast deepens.
+ *   A clear sky renders exactly as v0.1.37. The widget's face
+ *   follows too (day / wet-day / night / wet-night variants).
+ *   Re-scanned: no group falls below the clear-sky baseline on
+ *   any text pair (docs/FEATURE_v0.1.38.md).
  * Logic (Rules / WeatherApi / MetApi) is untouched by the design pass.
  */
 class MainActivity : Activity() {
@@ -392,42 +404,96 @@ class MainActivity : Activity() {
     // sky and glass grounds) keeps ink / sub above their gates in
     // every sky state (docs/FEATURE_v0.1.37.md). Do not retune
     // without re-running the scan.
+    //
+    // v0.1.38: the palette also takes a weather cast — after the
+    // phase mixes, each stop is pulled toward the weather group's
+    // anchor by (per-stop ratio x shade), so a rainy sky sinks to
+    // grey-blue, a snowy sky whitens, a thunder sky deepens, while
+    // a clear sky keeps the exact v0.1.37 colors (shade 0). The
+    // anchors are deliberately luminance-safe: in light mode the
+    // wet anchors are desaturated rather than dark (an overcast
+    // daytime sky is bright grey), because the night top stop is
+    // the scanned weakest ground for sub (4.58:1) and any real
+    // darkening there breaks the 4.5 gate. Re-scanned for all
+    // 7 groups x phases (docs/FEATURE_v0.1.38.md): under a strict
+    // 5-minute sampling of the reachable (dayness, warm) states,
+    // no group falls below the clear-sky baseline on any pair.
+    // Do not retune without re-running that scan.
 
     private val warmSky: Int get() = if (isDark) rgb(0x8A, 0x5A, 0x38) else rgb(0xFF, 0xC9, 0x9A)
     private val nightSlate: Int = rgb(0x8E, 0xA6, 0xBE)
     private val dayBright: Int = rgb(0x35, 0x52, 0x6B)
 
-    /** Phase-adjusted gradient stops for the sky (scanned formulas). */
-    private fun skyStops(dayness: Float, warm: Float): Triple<Int, Int, Int> {
-        return if (isDark) {
+    /** One weather group's palette cast: an anchor + per-stop pull. */
+    private data class SkyCast(val anchor: Int, val rTop: Float, val rMid: Float, val rBot: Float)
+
+    private fun skyCast(group: SkyGroup): SkyCast? {
+        return if (isDark) when (group) {
+            SkyGroup.CLEAR -> null
+            SkyGroup.PARTLY -> SkyCast(rgb(0x0F, 0x1B, 0x2A), 0.20f, 0.18f, 0.16f)
+            SkyGroup.CLOUDY -> SkyCast(rgb(0x0E, 0x19, 0x26), 0.32f, 0.30f, 0.27f)
+            SkyGroup.RAIN -> SkyCast(rgb(0x0B, 0x14, 0x1F), 0.46f, 0.43f, 0.40f)
+            SkyGroup.THUNDER -> SkyCast(rgb(0x06, 0x0C, 0x14), 0.52f, 0.50f, 0.46f)
+            SkyGroup.SNOW -> SkyCast(rgb(0x2B, 0x3D, 0x54), 0.26f, 0.26f, 0.24f)
+            SkyGroup.FOG -> SkyCast(rgb(0x1A, 0x26, 0x34), 0.42f, 0.40f, 0.38f)
+        } else when (group) {
+            SkyGroup.CLEAR -> null
+            SkyGroup.PARTLY -> SkyCast(rgb(0xB0, 0xC2, 0xD4), 0.26f, 0.24f, 0.28f)
+            SkyGroup.CLOUDY -> SkyCast(rgb(0xA9, 0xBA, 0xCA), 0.30f, 0.34f, 0.44f)
+            SkyGroup.RAIN -> SkyCast(rgb(0xA5, 0xB6, 0xC6), 0.30f, 0.36f, 0.55f)
+            SkyGroup.THUNDER -> SkyCast(rgb(0x9F, 0xB2, 0xC4), 0.34f, 0.38f, 0.52f)
+            SkyGroup.SNOW -> SkyCast(rgb(0xE8, 0xEE, 0xF4), 0.36f, 0.40f, 0.34f)
+            SkyGroup.FOG -> SkyCast(rgb(0xB2, 0xC1, 0xCC), 0.46f, 0.48f, 0.50f)
+        }
+    }
+
+    /** Phase- and weather-adjusted gradient stops (scanned formulas). */
+    private fun skyStops(
+        dayness: Float, warm: Float, group: SkyGroup, shade: Float
+    ): Triple<Int, Int, Int> {
+        var top: Int
+        var mid: Int
+        var bot: Int
+        if (isDark) {
             val top0 = rgb(0x13, 0x22, 0x38)
             val mid0 = rgb(0x1B, 0x33, 0x50)
             val bot0 = rgb(0x24, 0x3D, 0x59)
-            val top = mix(mix(top0, dayBright, 0.42f * dayness), warmSky, 0.18f * warm)
-            val mid = mix(mix(mid0, dayBright, 0.34f * dayness), warmSky, 0.16f * warm)
-            val bot = mix(mix(bot0, dayBright, 0.12f * dayness), warmSky, 0.08f * warm)
-            Triple(top, mid, bot)
+            top = mix(mix(top0, dayBright, 0.42f * dayness), warmSky, 0.18f * warm)
+            mid = mix(mix(mid0, dayBright, 0.34f * dayness), warmSky, 0.16f * warm)
+            bot = mix(mix(bot0, dayBright, 0.12f * dayness), warmSky, 0.08f * warm)
         } else {
             val top0 = rgb(0x8F, 0xB4, 0xE6)
             val mid0 = rgb(0xC2, 0xDC, 0xF5)
             val bot0 = rgb(0xFD, 0xEB, 0xCB)
-            val top = mix(mix(top0, warmSky, 0.30f * warm), nightSlate, 0.40f * (1f - dayness))
+            top = mix(mix(top0, warmSky, 0.30f * warm), nightSlate, 0.40f * (1f - dayness))
             val midT = mix(nightSlate, bot0, 0.35f)
-            val mid = mix(mix(mid0, warmSky, 0.24f * warm), midT, 0.32f * (1f - dayness))
-            val bot = mix(bot0, warmSky, 0.12f * warm)
-            Triple(top, mid, bot)
+            mid = mix(mix(mid0, warmSky, 0.24f * warm), midT, 0.32f * (1f - dayness))
+            bot = mix(bot0, warmSky, 0.12f * warm)
         }
+        val cast = skyCast(group)
+        if (cast != null && shade > 0f) {
+            top = mix(top, cast.anchor, cast.rTop * shade)
+            mid = mix(mid, cast.anchor, cast.rMid * shade)
+            bot = mix(bot, cast.anchor, cast.rBot * shade)
+        }
+        return Triple(top, mid, bot)
     }
 
     /**
      * The ambient glow behind the conclusion (SkyView.State.glow):
      * warm sunlight in light mode, a pale moonlit blue in dark —
-     * concept A's sun pool, at the scanned strengths.
+     * concept A's sun pool, at the scanned strengths. v0.1.38: the
+     * glow thins as the weather cast deepens (shade), so an overcast
+     * or rainy sky has no sunny pool behind the conclusion; a clear
+     * sky keeps the v0.1.37 strength exactly.
      */
-    private fun skyGlow(): Int = if (isDark) {
-        withAlpha(rgb(0x9D, 0xB8, 0xD9), 110)
-    } else {
-        withAlpha(rgb(0xFF, 0xEF, 0xD0), 170)
+    private fun skyGlow(shade: Float): Int {
+        val f = 1f - 0.5f * shade
+        return if (isDark) {
+            withAlpha(rgb(0x9D, 0xB8, 0xD9), (110 * f).toInt())
+        } else {
+            withAlpha(rgb(0xFF, 0xEF, 0xD0), (170 * f).toInt())
+        }
     }
 
     private fun smoothstepF(a: Float, b: Float, x: Float): Float {
@@ -477,7 +543,10 @@ class MainActivity : Activity() {
 
     private data class SkyWeather(
         val cloudiness: Float, val cloudDark: Float,
-        val rainLevel: Int, val snow: Boolean, val fog: Boolean
+        val rainLevel: Int, val snow: Boolean, val fog: Boolean,
+        // v0.1.38: the palette cast — which mood group the sky is in
+        // and how strongly the cast pulls (0 = the clear v0.1.37 sky).
+        val group: SkyGroup = SkyGroup.CLEAR, val shade: Float = 0f
     )
 
     /**
@@ -487,6 +556,8 @@ class MainActivity : Activity() {
      * their own layers. WMO weather codes (Open-Meteo); the backup
      * source maps its symbols onto the same codes (MetApi), so one
      * table drives both. With no data the sky is time-only.
+     * v0.1.38: the same row also names the palette group (via
+     * [skyGroupForCode], shared with the widget) and the cast shade.
      */
     private fun skyWeather(today: DayForecast?): SkyWeather {
         if (today == null || today.hours.isEmpty()) {
@@ -500,28 +571,29 @@ class MainActivity : Activity() {
         var rain = 0
         var snow = false
         var fog = false
+        var shade = 0f
         when (e.weatherCode) {
             0 -> { cloud = 0.06f; dark = 0.0f }
-            1 -> { cloud = 0.25f; dark = 0.05f }
-            2 -> { cloud = 0.5f; dark = 0.15f }
-            3 -> { cloud = 0.85f; dark = 0.35f }
-            45, 48 -> { cloud = 0.7f; dark = 0.3f; fog = true }
-            51, 53, 55, 56, 57 -> { cloud = 0.8f; dark = 0.45f; rain = 1 }
-            61 -> { cloud = 0.85f; dark = 0.5f; rain = 1 }
-            63 -> { cloud = 0.9f; dark = 0.6f; rain = 2 }
-            65 -> { cloud = 0.95f; dark = 0.7f; rain = 3 }
-            66, 67 -> { cloud = 0.9f; dark = 0.6f; rain = 2 }
-            71, 73, 75, 77 -> { cloud = 0.85f; dark = 0.4f; snow = true }
-            80 -> { cloud = 0.7f; dark = 0.4f; rain = 1 }
-            81 -> { cloud = 0.8f; dark = 0.5f; rain = 2 }
-            82 -> { cloud = 0.9f; dark = 0.65f; rain = 3 }
-            85, 86 -> { cloud = 0.8f; dark = 0.4f; snow = true }
-            95 -> { cloud = 0.95f; dark = 0.7f; rain = 2 }
-            96, 99 -> { cloud = 1.0f; dark = 0.75f; rain = 3 }
+            1 -> { cloud = 0.25f; dark = 0.05f; shade = 0.45f }
+            2 -> { cloud = 0.5f; dark = 0.15f; shade = 0.7f }
+            3 -> { cloud = 0.85f; dark = 0.35f; shade = 0.85f }
+            45, 48 -> { cloud = 0.7f; dark = 0.3f; fog = true; shade = 0.75f }
+            51, 53, 55, 56, 57 -> { cloud = 0.8f; dark = 0.45f; rain = 1; shade = 0.5f }
+            61 -> { cloud = 0.85f; dark = 0.5f; rain = 1; shade = 0.65f }
+            63 -> { cloud = 0.9f; dark = 0.6f; rain = 2; shade = 0.8f }
+            65 -> { cloud = 0.95f; dark = 0.7f; rain = 3; shade = 1.0f }
+            66, 67 -> { cloud = 0.9f; dark = 0.6f; rain = 2; shade = 0.8f }
+            71, 73, 75, 77 -> { cloud = 0.85f; dark = 0.4f; snow = true; shade = 0.8f }
+            80 -> { cloud = 0.7f; dark = 0.4f; rain = 1; shade = 0.5f }
+            81 -> { cloud = 0.8f; dark = 0.5f; rain = 2; shade = 0.7f }
+            82 -> { cloud = 0.9f; dark = 0.65f; rain = 3; shade = 0.95f }
+            85, 86 -> { cloud = 0.8f; dark = 0.4f; snow = true; shade = 0.65f }
+            95 -> { cloud = 0.95f; dark = 0.7f; rain = 2; shade = 0.85f }
+            96, 99 -> { cloud = 1.0f; dark = 0.75f; rain = 3; shade = 1.0f }
         }
         if (rain == 0 && e.precip >= 0.1) rain = 1
         if (rain in 1..2 && e.precip >= 2.0) rain = 3
-        return SkyWeather(cloud, dark, rain, snow, fog)
+        return SkyWeather(cloud, dark, rain, snow, fog, skyGroupForCode(e.weatherCode), shade)
     }
 
     private fun applyBackground() {
@@ -531,9 +603,9 @@ class MainActivity : Activity() {
         val now = nowMinutesFloat()
         val dayness = daynessAt(now, sunriseMin, sunsetMin)
         val warm = warmAt(now, sunriseMin, sunsetMin)
-        val (top, mid, bot) = skyStops(dayness, warm)
         val w = skyWeather(today)
-        val glow = skyGlow()
+        val (top, mid, bot) = skyStops(dayness, warm, w.group, w.shade)
+        val glow = skyGlow(w.shade)
         skyView.skyState = SkyView.State(
             top, mid, bot, isDark, glow,
             sunriseMin, sunsetMin, dayness,
@@ -2043,6 +2115,17 @@ class MainActivity : Activity() {
                 daytimeFeelAvg = Rules.daytimeFeelAvg(today),
                 daytimeHumidityAvg = Rules.daytimeHumidityAvg(today),
                 accentDark = toneFor(Rules.daytimeAvg(today), dark = true).accent,
+                // v0.1.38: the widget's face follows the sky — the
+                // current hour's code (same pick as skyWeather) and
+                // the day's sunrise/sunset.
+                weatherCode = run {
+                    val nowH = (nowMinutesFloat() / 60).toInt()
+                    (today.hour(nowH) ?: today.hours.minByOrNull {
+                        kotlin.math.abs(it.hour - nowH)
+                    })?.weatherCode ?: -1
+                },
+                sunriseMin = minutesOf(today.sunrise, 360),
+                sunsetMin = minutesOf(today.sunset, 1080),
                 updatedAt = System.currentTimeMillis()
             )
         )
@@ -2742,7 +2825,7 @@ class MainActivity : Activity() {
         // source's attribution directly under the data it describes —
         // one home for attribution instead of two.
         col.addView(TextView(this).apply {
-            text = "天気のこたえ v0.1.37（プロトタイプ）"
+            text = "天気のこたえ v0.1.38（プロトタイプ）"
             textSize = 13f; setTextColor(sub)
             setPadding(0, dp(24), 0, 0)
             lineHeight = dp(21)
@@ -2965,9 +3048,9 @@ class MainActivity : Activity() {
         }
         val dayness = daynessAt(minutes, sunriseMin, sunsetMin)
         val warm = warmAt(minutes, sunriseMin, sunsetMin)
-        val (top, mid, bot) = skyStops(dayness, warm)
         val w = skyWeather(today)
-        val glow = skyGlow()
+        val (top, mid, bot) = skyStops(dayness, warm, w.group, w.shade)
+        val glow = skyGlow(w.shade)
         return SkyView.State(
             top, mid, bot, isDark, glow,
             sunriseMin, sunsetMin, dayness,

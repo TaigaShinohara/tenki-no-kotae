@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget face, wet day (v0.1.38): the day sky under rain / snow /
+     thunder / fog — the blue desaturated to a bright grey-blue and
+     the peach horizon gone, mirroring the app palette's weather
+     cast (light anchors pulled toward pale grey). Navy text, set
+     per face by TenkiWidgetProvider; scanned per zone
+     (docs/FEATURE_v0.1.38.md): weakest pair is the city line's sub
+     navy on the top stop, 4.93:1. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#A3B4C5"
+        android:centerColor="#B9C9D6"
+        android:endColor="#CDD4CE"
+        android:type="linear" />
+    <corners android:radius="24dp" />
+    <stroke
+        android:width="1dp"
+        android:color="#8299AE" />
+</shape>

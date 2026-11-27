@@ -25,13 +25,21 @@ import java.util.Locale
  * With no snapshot yet, the widget shows a placeholder that invites
  * opening the app. Tapping anywhere opens MainActivity.
  *
- * The widget's face is fixed dark (deep slate glass) in both system
- * modes: a launcher widget sits on arbitrary wallpapers, and the dark
- * face keeps its text above the contrast gates on all of them — the
- * same reason the app's dark palette is defined independently
- * (ART_DIRECTION §10). The accent stored in the snapshot is therefore
- * the *dark* variant of the day's color. Registered in
- * docs/UI_CATALOG.md (ホーム画面ウィジェット).
+ * The widget's face was fixed dark (deep slate glass) in both
+ * system modes through v0.1.37: a launcher widget sits on arbitrary
+ * wallpapers, and the dark face keeps its text above the contrast
+ * gates on all of them — the same reason the app's dark palette is
+ * defined independently (ART_DIRECTION §10). Since v0.1.38 the face
+ * follows the sky instead, in four scanned variants (day / wet-day /
+ * night / wet-night — see TenkiWidgetProvider.faceFor): every face
+ * is an opaque sky gradient of its own, so the gate argument holds
+ * per face; the day faces take navy text throughout (the day's
+ * color headlines only the night faces — its light variants fail
+ * the gate on the day sky). Snapshots written
+ * before v0.1.38 lack the sky fields; their defaults (no code,
+ * 06:00/18:00) render the night face until the next Home display
+ * refreshes the snapshot. Registered in docs/UI_CATALOG.md
+ * (ホーム画面ウィジェット).
  */
 object WidgetSnapshot {
 
@@ -53,6 +61,12 @@ object WidgetSnapshot {
         val daytimeFeelAvg: Double? = null,
         val daytimeHumidityAvg: Double? = null,
         val accentDark: Int,
+        // v0.1.38: the sky the widget's face follows — the current
+        // hour's weather code (-1 = unknown) and today's sunrise /
+        // sunset in minutes.
+        val weatherCode: Int = -1,
+        val sunriseMin: Int = 360,
+        val sunsetMin: Int = 1080,
         val updatedAt: Long
     )
 
@@ -72,6 +86,9 @@ object WidgetSnapshot {
             .putBoolean("humHas", data.daytimeHumidityAvg != null)
             .putFloat("humAvg", (data.daytimeHumidityAvg ?: 0.0).toFloat())
             .putInt("accentDark", data.accentDark)
+            .putInt("weatherCode", data.weatherCode)
+            .putInt("sunriseMin", data.sunriseMin)
+            .putInt("sunsetMin", data.sunsetMin)
             .putLong("updatedAt", data.updatedAt)
             .apply()
     }
@@ -100,10 +117,16 @@ object WidgetSnapshot {
                 null
             },
             accentDark = p.getInt("accentDark", Color.rgb(0x7C, 0xC7, 0xF0)),
+            weatherCode = p.getInt("weatherCode", -1),
+            sunriseMin = p.getInt("sunriseMin", 360),
+            sunsetMin = p.getInt("sunsetMin", 1080),
             updatedAt = p.getLong("updatedAt", 0L)
         )
     }
 }
+
+/** The four widget faces (v0.1.38): day phase x wet group. */
+enum class WidgetFace { DAY, DAY_WET, NIGHT, NIGHT_WET }
 
 class TenkiWidgetProvider : AppWidgetProvider() {
 
@@ -116,6 +139,10 @@ class TenkiWidgetProvider : AppWidgetProvider() {
     companion object {
 
         private val WIDGET_INK = Color.rgb(0xF5, 0xF1, 0xEA)
+        private val WIDGET_CITY_NIGHT = Color.rgb(0xB9, 0xC4, 0xCE)
+        private val WIDGET_UPDATED_NIGHT = Color.rgb(0xC7, 0xD2, 0xDE)
+        private val WIDGET_INK_DAY = Color.rgb(0x1E, 0x2C, 0x5F)
+        private val WIDGET_SUB_DAY = Color.rgb(0x2E, 0x3C, 0x72)
 
         /** Called by MainActivity right after a snapshot is saved. */
         fun requestUpdate(context: Context) {
@@ -124,6 +151,37 @@ class TenkiWidgetProvider : AppWidgetProvider() {
                 ComponentName(context, TenkiWidgetProvider::class.java)
             )
             for (id in ids) updateOne(context, mgr, id)
+        }
+
+        /**
+         * Which face the snapshot's sky asks for: the phase comes
+         * from the snapshot's sunrise / sunset against the current
+         * time in Asia/Tokyo (the app's timezone), the wet flag from
+         * the weather group of the snapshot's current-hour code —
+         * the same [skyGroupForCode] mapping the app palette uses.
+         * Rain / snow / thunder / fog are wet; cloudy still reads
+         * as sky on the day face, so it stays with the clear faces.
+         */
+        fun faceFor(data: WidgetSnapshot.Data, nowMin: Int): WidgetFace {
+            val wet = when (skyGroupForCode(data.weatherCode)) {
+                SkyGroup.RAIN, SkyGroup.SNOW, SkyGroup.THUNDER, SkyGroup.FOG -> true
+                else -> false
+            }
+            val day = nowMin >= data.sunriseMin && nowMin < data.sunsetMin
+            return when {
+                day && wet -> WidgetFace.DAY_WET
+                day -> WidgetFace.DAY
+                wet -> WidgetFace.NIGHT_WET
+                else -> WidgetFace.NIGHT
+            }
+        }
+
+        private fun nowMinutesTokyo(): Int {
+            val cal = java.util.Calendar.getInstance(
+                java.util.TimeZone.getTimeZone("Asia/Tokyo")
+            )
+            return cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 +
+                cal.get(java.util.Calendar.MINUTE)
         }
 
         private fun updateOne(context: Context, mgr: AppWidgetManager, id: Int) {
@@ -151,9 +209,44 @@ class TenkiWidgetProvider : AppWidgetProvider() {
                     daytimeFeelAvg = data.daytimeFeelAvg,
                     daytimeHumidityAvg = data.daytimeHumidityAvg
                 )
+                // v0.1.38: the face follows the snapshot's sky, and
+                // every text color is set explicitly per face (the
+                // layout XML carries the night face's colors as its
+                // defaults). All four faces were contrast-scanned
+                // per zone (docs/FEATURE_v0.1.38.md).
+                val face = faceFor(data, nowMinutesTokyo())
+                val dayFace = face == WidgetFace.DAY || face == WidgetFace.DAY_WET
+                views.setInt(
+                    R.id.widget_root, "setBackgroundResource",
+                    when (face) {
+                        WidgetFace.DAY -> R.drawable.widget_bg_day
+                        WidgetFace.DAY_WET -> R.drawable.widget_bg_day_wet
+                        WidgetFace.NIGHT -> R.drawable.widget_bg
+                        WidgetFace.NIGHT_WET -> R.drawable.widget_bg_night_wet
+                    }
+                )
+                views.setTextColor(
+                    R.id.widget_city,
+                    if (dayFace) WIDGET_SUB_DAY else WIDGET_CITY_NIGHT
+                )
+                views.setTextColor(
+                    R.id.widget_answers,
+                    if (dayFace) WIDGET_INK_DAY else WIDGET_INK
+                )
+                views.setTextColor(
+                    R.id.widget_updated,
+                    if (dayFace) WIDGET_SUB_DAY else WIDGET_UPDATED_NIGHT
+                )
                 views.setTextViewText(R.id.widget_city, data.city)
                 views.setTextViewText(R.id.widget_headline, data.headline)
-                views.setTextColor(R.id.widget_headline, data.accentDark)
+                // The day's color headlines only the night faces:
+                // its light variants top out at 4.04:1 on the day
+                // sky's top stop (scan in docs/FEATURE_v0.1.38.md),
+                // so the day faces headline in ink navy instead.
+                views.setTextColor(
+                    R.id.widget_headline,
+                    if (dayFace) WIDGET_INK_DAY else data.accentDark
+                )
                 views.setTextViewText(
                     R.id.widget_answers,
                     "服装：${data.clothing}\n傘：${data.umbrella}\n日焼け止め：${data.sunscreen}"

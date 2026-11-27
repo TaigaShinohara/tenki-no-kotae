@@ -17,6 +17,26 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 /**
+ * 天気グループ (v0.1.38): the seven sky moods the palette switches
+ * between. One mapping from WMO weather codes (Open-Meteo; the
+ * backup source's symbols are mapped onto the same codes in MetApi)
+ * shared by the app (MainActivity's palette cast) and the widget
+ * (TenkiWidget's face choice), so the two never disagree about what
+ * kind of sky it is.
+ */
+enum class SkyGroup { CLEAR, PARTLY, CLOUDY, RAIN, SNOW, THUNDER, FOG }
+
+fun skyGroupForCode(code: Int): SkyGroup = when (code) {
+    0 -> SkyGroup.CLEAR
+    1, 2 -> SkyGroup.PARTLY
+    3 -> SkyGroup.CLOUDY
+    45, 48 -> SkyGroup.FOG
+    71, 73, 75, 77, 85, 86 -> SkyGroup.SNOW
+    95, 96, 99 -> SkyGroup.THUNDER
+    else -> if (code < 0) SkyGroup.CLEAR else SkyGroup.RAIN // 51-67 rain, 80-82 showers
+}
+
+/**
  * 生きている空 (v0.1.9): the background of every screen is the sky of
  * the selected place, right now — a slow animation driven only by data
  * the app already fetched (today's weather code / precipitation and
