@@ -91,6 +91,12 @@ tools/run-unit-tests.sh verify com.taigashinohara.tenkinokotae.MainActivityScree
    夕方に当日10:00へ固定する指定は黙って効いていなかった。対策として
    ピンは「今日の10:00、過ぎていれば翌日の10:00」へ前方に取り、
    キャッシュの保存時刻（`cache_at_大阪`）もピン値に合わせた。
+   **（2026-11-28 追記）この対策は superseded。** 実測の結果、
+   アプリの `System.currentTimeMillis` / `LocalDate.now` には
+   SystemClock ピンがそもそも届いておらず（夜間テストの
+   実時刻依存として顕在化）、現在は MainActivity.nowMillis
+   シーム＋固定日付（2026-11-25）ピンが正本。
+   docs/FIX_TEST_CLOCK.md を参照。cache_at は実時計で打つ。
 2. **それでも全画面のピクセル完全一致は成立しない。** SkyView は
    太陽・月の位置を「描画時点の壁時計（秒精度）」から決める
    （`SkyView.nowMinutes()`）。ピンはできてもクロックはスケジューラを
