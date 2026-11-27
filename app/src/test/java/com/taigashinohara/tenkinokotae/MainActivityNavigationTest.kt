@@ -13,7 +13,6 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import android.os.SystemClock
 
 /**
  * Robolectric screen-transition tests: tab navigation must swap the
@@ -28,7 +27,7 @@ class MainActivityNavigationTest {
 
     @Before
     fun setUp() {
-        SystemClock.setCurrentTimeMillis(ScreenshotSupport.fixedNowMillis())
+        ScreenshotSupport.repinClock()
         val app = RuntimeEnvironment.getApplication()
         android.provider.Settings.Global.putFloat(
             app.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f

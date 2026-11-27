@@ -18,41 +18,44 @@ import kotlin.math.sin
  * no-emulator pre-delivery verification standard, 2026-11-23 —
  * docs/VERIFICATION_SETUP.md).
  *
- * The app is driven deterministically: the wall clock is pinned to
- * 10:00 JST (today, or tomorrow when today's 10:00 is already past —
- * Robolectric's paused clock cannot move backward; see
- * fixedNowMillis) and SharedPreferences is seeded with a fresh
- * Open-Meteo cache entry, so onCreate shows the home screen from cache
- * at once — no network, no loading spinner, no intro staging.
+ * The app is driven deterministically: "now" is a fixed calendar
+ * instant (see BASE_DATE / fixedNowMillis) fed to the app through
+ * its MainActivity.nowMillis seam — Robolectric's own clock controls
+ * (SystemClock, the scheduler) do not reach the app's
+ * System.currentTimeMillis / LocalDate.now reads in this
+ * environment (measured; docs/FIX_TEST_CLOCK.md) — and
+ * SharedPreferences is seeded with a fresh Open-Meteo cache entry,
+ * so onCreate shows the home screen from cache at once — no
+ * network, no loading spinner, no intro staging.
  */
 object ScreenshotSupport {
 
     val TOKYO: ZoneId = ZoneId.of("Asia/Tokyo")
 
-    /** Today in the app's own timezone (MainActivity.todayStr uses Asia/Tokyo). */
-    fun today(): LocalDate = LocalDate.now(TOKYO)
+    /**
+     * The one fixed calendar date the whole suite lives on. A fixed
+     * date (not "today") is what makes the suite date-independent:
+     * the seeded cache, the app's today/tomorrow selection and the
+     * dated 「明日」 label in the night golden all derive from it.
+     */
+    val BASE_DATE: LocalDate = LocalDate.of(2026, 11, 25)
+
+    /** The suite's "today": always [BASE_DATE]. */
+    fun today(): LocalDate = BASE_DATE
 
     private var pinCache: Long = 0L
 
     /**
-     * The frozen "now" for renders: 10:00 JST, today — or tomorrow if
-     * that is already past. Robolectric's ShadowPausedSystemClock
-     * refuses to move the clock BACKWARD (setCurrentTimeMillis
-     * returns false and does nothing when the target is earlier than
-     * the current sandbox time, which starts at the real time), so
-     * the pin must always be in the future; the sandbox clock is then
-     * exactly 10:00 plus a few seconds of scheduler drift. The app
-     * reads only the time-of-day from the sandbox clock (sun position,
-     * "from now" averages) and the date from java.time (real clock,
-     * unshadowed), so pinning to tomorrow's 10:00 is safe. Computed
-     * once per JVM so every test in the class pins to the same value.
+     * The frozen "now" for renders: [BASE_DATE] at 10:00 JST. Fed to
+     * the app through the MainActivity.nowMillis seam (see
+     * repinClock); the legacy SystemClock pin is still issued for
+     * the sandbox scheduler's sake but is a no-op for a past instant
+     * and no longer carries any assertion. Computed once per JVM so
+     * every test pins to the same value.
      */
     fun fixedNowMillis(): Long {
         if (pinCache == 0L) {
-            var t = today().atTime(10, 0).atZone(TOKYO).toInstant().toEpochMilli()
-            val now = System.currentTimeMillis()
-            while (t <= now) t += 24L * 60 * 60 * 1000
-            pinCache = t
+            pinCache = BASE_DATE.atTime(10, 0).atZone(TOKYO).toInstant().toEpochMilli()
         }
         return pinCache
     }
@@ -157,27 +160,27 @@ object ScreenshotSupport {
     }
 
     /**
-     * Re-pins the sandbox wall clock to the frozen "now". Robolectric's
-     * paused clock still advances as its scheduler is pumped (idles,
-     * Espresso syncs), and the app bakes the sky state (sun position,
-     * "from now" averages) from the wall clock to the second whenever
-     * a screen is (re)shown — so the pin must land right before the
-     * interaction that re-bakes the screen under test.
+     * Re-pins "now" to the frozen day instant, through the app's
+     * MainActivity.nowMillis seam (the SystemClock call is kept for
+     * the sandbox scheduler, as before). The app bakes the screen
+     * state (night-mode switch, "from now" averages) from "now"
+     * whenever a screen is (re)shown — so the pin must land right
+     * before the interaction that re-bakes the screen under test.
      */
     fun repinClock() {
+        MainActivity.nowMillis = { fixedNowMillis() }
         android.os.SystemClock.setCurrentTimeMillis(fixedNowMillis())
     }
 
     private var nightPinCache: Long = 0L
 
     /**
-     * The frozen "night": the pin day at 20:00 — past the app's
+     * The frozen "night": [BASE_DATE] at 20:00 — past the app's
      * NIGHT_SWITCH_HOUR (19), so Home builds its tomorrow display.
-     * Derived from [fixedNowMillis] (+10 h) so it is always later
-     * than the day pin (the paused clock cannot move backward) and
-     * on the same sandbox date. The app's *date* still comes from
-     * java.time (real clock), so the seeded cache's tomorrow is the
-     * day the night screen must show.
+     * Derived from [fixedNowMillis] (+10 h), on the same fixed date;
+     * through the nowMillis seam the app's date moves with it, so
+     * the seeded cache's tomorrow (BASE_DATE + 1) is the day the
+     * night screen shows.
      */
     fun fixedNightMillis(): Long {
         if (nightPinCache == 0L) {
@@ -186,8 +189,9 @@ object ScreenshotSupport {
         return nightPinCache
     }
 
-    /** Re-pins the sandbox wall clock to the frozen night (20:00). */
+    /** Re-pins "now" to the frozen night (20:00). */
     fun repinNightClock() {
+        MainActivity.nowMillis = { fixedNightMillis() }
         android.os.SystemClock.setCurrentTimeMillis(fixedNightMillis())
     }
 
@@ -207,8 +211,9 @@ object ScreenshotSupport {
         return duskPinCache
     }
 
-    /** Re-pins the sandbox wall clock to the frozen dusk (17:50). */
+    /** Re-pins "now" to the frozen dusk (17:50). */
     fun repinDuskClock() {
+        MainActivity.nowMillis = { fixedDuskMillis() }
         android.os.SystemClock.setCurrentTimeMillis(fixedDuskMillis())
     }
 
@@ -248,7 +253,11 @@ object ScreenshotSupport {
         val prefs = context.getSharedPreferences("tenki_prefs", Context.MODE_PRIVATE)
         prefs.edit()
             .putString("cache_大阪", json)
-            .putLong("cache_at_大阪", fixedNowMillis())
+            // The stamp uses the REAL clock on purpose: the app's
+            // cache-freshness checks read the real clock (they are
+            // not part of the nowMillis seam), so a frozen stamp
+            // would age past the 24 h freshness window.
+            .putLong("cache_at_大阪", System.currentTimeMillis())
             .commit()
     }
 

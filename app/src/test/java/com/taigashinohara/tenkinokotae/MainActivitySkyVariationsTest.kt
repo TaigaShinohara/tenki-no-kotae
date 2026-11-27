@@ -11,7 +11,6 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import android.os.SystemClock
 
 /**
  * Screenshot tests for the v0.1.38 weather-cast skies: the home
@@ -33,7 +32,7 @@ class MainActivitySkyVariationsTest {
 
     @Before
     fun setUp() {
-        SystemClock.setCurrentTimeMillis(ScreenshotSupport.fixedNowMillis())
+        ScreenshotSupport.repinClock()
         val app = RuntimeEnvironment.getApplication()
         android.provider.Settings.Global.putFloat(
             app.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f

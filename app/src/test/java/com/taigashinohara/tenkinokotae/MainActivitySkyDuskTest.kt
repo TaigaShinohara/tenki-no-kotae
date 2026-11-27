@@ -11,15 +11,14 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import android.os.SystemClock
 
 /**
  * Screenshot test for the dusk sky (v0.1.38 variation set): the
  * sunny fixture at the frozen 17:50 — inside the sunset warm bump,
  * ahead of the 19:00 night-mode switch, so Home still shows today
- * under an orange-leaning horizon. Its own class because the dusk
- * pin (17:50) must never have to move the shared sandbox clock
- * backward relative to the day (10:00) or night (20:00) pins.
+ * under an orange-leaning horizon. Its own class so the dusk pin
+ * (17:50) is applied in isolation from the day (10:00) and night
+ * (20:00) pins of the other screen classes.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -28,7 +27,7 @@ class MainActivitySkyDuskTest {
 
     @Before
     fun setUp() {
-        SystemClock.setCurrentTimeMillis(ScreenshotSupport.fixedNowMillis())
+        ScreenshotSupport.repinClock()
         val app = RuntimeEnvironment.getApplication()
         android.provider.Settings.Global.putFloat(
             app.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f

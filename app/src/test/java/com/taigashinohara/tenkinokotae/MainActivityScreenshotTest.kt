@@ -12,7 +12,6 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import android.os.SystemClock
 
 /**
  * Screenshot tests for the main screens (Robolectric + Roborazzi,
@@ -33,7 +32,7 @@ class MainActivityScreenshotTest {
 
     @Before
     fun setUp() {
-        SystemClock.setCurrentTimeMillis(ScreenshotSupport.fixedNowMillis())
+        ScreenshotSupport.repinClock()
         val app = RuntimeEnvironment.getApplication()
         // Freeze the living sky: with the animator scale at 0 the app
         // itself treats the sky as a still picture (SkyView's
