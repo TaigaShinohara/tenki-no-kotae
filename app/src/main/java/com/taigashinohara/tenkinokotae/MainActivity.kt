@@ -180,6 +180,21 @@ import kotlin.math.roundToInt
  *   tonight survives as one small line. With no tomorrow data,
  *   Home stays on today and says why. Detail gains a dated
  *   明日の要点 card. The sky and the widget stay on today.
+ * - v0.1.37 (concept-A redesign, docs/FEATURE_v0.1.37.md): the user
+ *   picked design concept A （そらグラデーション) from a board of
+ *   twelve and the whole app was re-skinned to it. The sky is now a
+ *   fixed sky palette (pale blue -> warm peach horizon in light
+ *   mode, deep sky navy in dark) instead of the day's tint; text is
+ *   deep sky navy (light) / pale sky (dark) set directly on the
+ *   sky; the glass is the skill's white reading glass again (light
+ *   62->54% / dark 19->13%) — the v0.1.6 colored glass retires
+ *   together with the tinted sky it was tuned for. Home's three
+ *   answers are frosted-glass cards again (the B5 stack itself is
+ *   unchanged), and the tab bar floats as a rounded glass pill
+ *   with icon-led tabs, the selected tab a solid navy pill. The
+ *   day's color survives only as the widget headline's color.
+ *   Every text pair was re-scanned against the new grounds
+ *   (weakest: sub on the light night sky top, 4.58:1).
  * Logic (Rules / WeatherApi / MetApi) is untouched by the design pass.
  */
 class MainActivity : Activity() {
@@ -190,25 +205,42 @@ class MainActivity : Activity() {
         get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
 
-    private val ink: Int get() = if (isDark) rgb(0xF5, 0xF1, 0xEA) else rgb(0x26, 0x22, 0x1E)
-    private val sub: Int get() = if (isDark) rgb(0xD8, 0xCF, 0xC2) else rgb(0x55, 0x4D, 0x44)
+    // v0.1.37 (concept A): the text colors join the sky world —
+    // deep sky navy on the light sky, pale sky white on the night
+    // sky. Both were re-scanned against every sky stop and glass
+    // ground (docs/FEATURE_v0.1.37.md); sub's weakest ground is the
+    // light sky at night (4.58:1), ink's is 5.82:1.
+    private val ink: Int get() = if (isDark) rgb(0xED, 0xF3, 0xFB) else rgb(0x1E, 0x2C, 0x5F)
+    private val sub: Int get() = if (isDark) rgb(0xC9, 0xD9, 0xEC) else rgb(0x2E, 0x3C, 0x72)
     private val paper: Int get() = if (isDark) rgb(0x12, 0x15, 0x1A) else rgb(0xFB, 0xF8, 0xF3)
+
+    /**
+     * そらアクセント (v0.1.37): the one solid color of the concept-A
+     * world — deep sky navy in light mode, pale sky blue in dark.
+     * It fills the selected tab / segment / chip and the primary
+     * button (the skill's 役割色ベタ slots) and leads the answer
+     * cards' icons. The day's color （その日の色） retired from
+     * these roles with the redesign — the mock's world is navy on
+     * sky throughout — and survives only as the widget headline's
+     * color (the snapshot's accentDark, via [toneFor]).
+     */
+    private val accent: Int
+        get() = if (isDark) rgb(0xA9, 0xC8, 0xF5) else rgb(0x1E, 0x2C, 0x5F)
+
+    /** Fixed sky blue for the Detail chart's area fill (was the day's tint). */
+    private val skyTint: Int get() = rgb(0x7F, 0xA8, 0xE0)
 
     private data class Tone(val accent: Int, val tint: Int)
 
-    private fun neutralTone(): Tone =
-        if (isDark) Tone(rgb(0x7C, 0xC7, 0xF0), rgb(0x1D, 0x32, 0x42))
-        else Tone(rgb(0x02, 0x77, 0xBD), rgb(0xE0, 0xF2, 0xFB))
-
-    /** その日の色 — bands match the clothing table in the design doc. */
-    private fun dayTone(daytimeAvg: Double): Tone = toneFor(daytimeAvg, isDark)
-
     /**
-     * The day's tone for an explicit mode. [dayTone] is the in-app
-     * caller (the device's current mode); the widget snapshot asks for
-     * the dark variant directly, because the widget's face is fixed
-     * dark (v0.1.14, see TenkiWidget.kt). One table, two callers —
-     * the values are ART_DIRECTION §2, unchanged.
+     * その日の色 — bands match the clothing table in the design doc.
+     * Since v0.1.37 the table has exactly one caller left: the widget
+     * snapshot asks for the dark variant directly, because the
+     * widget's face is fixed dark (v0.1.14, see TenkiWidget.kt), and
+     * the day's color survives in the app only as that headline's
+     * color. The in-app roles it used to fill (sky base, glass tint,
+     * text accents) moved to the fixed concept-A sky palette and
+     * [accent]. The values are ART_DIRECTION §2, unchanged.
      */
     private fun toneFor(daytimeAvg: Double, dark: Boolean): Tone = if (dark) {
         when {
@@ -232,12 +264,6 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun currentTone(): Tone {
-        val f = forecast ?: return neutralTone()
-        val today = f.day(todayStr()) ?: return neutralTone()
-        return dayTone(Rules.daytimeAvg(today))
-    }
-
     /** Text color on an accent fill: dark accents take white, light (dark-mode) accents take ink. */
     private fun onAccent(accent: Int): Int {
         fun lin(v: Int): Double {
@@ -246,7 +272,7 @@ class MainActivity : Activity() {
         }
         val lum = 0.2126 * lin(Color.red(accent)) + 0.7152 * lin(Color.green(accent)) +
             0.0722 * lin(Color.blue(accent))
-        return if (lum > 0.35) rgb(0x26, 0x22, 0x1E) else Color.WHITE
+        return if (lum > 0.35) rgb(0x1E, 0x2C, 0x5F) else Color.WHITE
     }
 
     private fun rgb(r: Int, g: Int, b: Int): Int = Color.rgb(r, g, b)
@@ -263,19 +289,23 @@ class MainActivity : Activity() {
         Color.argb(alpha, Color.red(c), Color.green(c), Color.blue(c))
 
     /**
-     * 色付きガラス (v0.1.6): the reading-glass fill is the day's tint at
-     * high alpha, not white. White alpha over the dark base lost the hue
-     * entirely and read as grey concrete on the real device; the skill
-     * allows colored faces to use the brand tint as-is, blended by alpha.
-     * Light: tint lightened 30% @82% -> tint @73%. Dark: tint lightened
-     * 10% @69% -> tint @59%. The edge stays the specular ring: 1dp with a
-     * gradient, top white 75% -> bottom 15% (dark 38% -> 6%). Built as
-     * two layers: the outer layer paints the edge gradient, the inner
-     * layer (inset 1dp) paints the glass fill, so only the 1dp ring of
-     * the gradient edge stays visible. Contrast re-scanned for all 7
-     * bands x light/dark x all positions (ART_DIRECTION.md §3).
+     * 読み物ガラス (v0.1.37): the glass is white again — the Simple
+     * Glass skill's reading-glass values verbatim (light: white
+     * 62% -> 54%; dark: white 19% -> 13%), under the same specular
+     * ring as always (1dp gradient edge, top white 75% -> bottom
+     * 15%, dark 38% -> 6%). The v0.1.6 colored glass (the day's tint
+     * at high alpha) existed because white over the old dark-tinted
+     * sky read as grey concrete; on concept A's fixed sky the white
+     * glass is the mock's frosted face, and its effective color over
+     * every sky stop was re-scanned with the new ink / sub
+     * (docs/FEATURE_v0.1.37.md — weakest pair: dark sub on glass
+     * over the day sky, 5.00:1). Built as two layers: the outer
+     * layer paints the edge gradient, the inner layer (inset 1dp)
+     * paints the glass fill, so only the 1dp ring stays visible.
+     * Plain Views have no backdrop blur, so the fill alone carries
+     * the separation, exactly as the skill prescribes.
      */
-    private fun glassBg(radiusDp: Int = 24, tone: Tone): Drawable {
+    private fun glassBg(radiusDp: Int = 24): Drawable {
         val edgeColors = if (isDark) {
             intArrayOf(argb(97, 255, 255, 255), argb(15, 255, 255, 255))
         } else {
@@ -285,15 +315,9 @@ class MainActivity : Activity() {
             cornerRadius = dp(radiusDp).toFloat()
         }
         val fillColors = if (isDark) {
-            intArrayOf(
-                withAlpha(mix(tone.tint, Color.WHITE, 0.10f), 175),
-                withAlpha(tone.tint, 150)
-            )
+            intArrayOf(argb(48, 255, 255, 255), argb(33, 255, 255, 255))
         } else {
-            intArrayOf(
-                withAlpha(mix(tone.tint, Color.WHITE, 0.30f), 210),
-                withAlpha(tone.tint, 185)
-            )
+            intArrayOf(argb(158, 255, 255, 255), argb(138, 255, 255, 255))
         }
         val fill = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, fillColors).apply {
             cornerRadius = dp((radiusDp - 1).coerceAtLeast(0)).toFloat()
@@ -357,39 +381,53 @@ class MainActivity : Activity() {
     // ---------- 生きている空 (v0.1.9) ----------
     //
     // The background is SkyView; here we only compute its State from
-    // the forecast model + the clock. The gradient stops start from
-    // the same base stops the old static background used (light:
-    // tint lightened 30% / tint / paper; dark: tint toward paper
-    // 25% / 45% / paper) and are then pulled toward the phase colors:
-    // warm (#FFC99A light / #8A5A38 dark) around sunrise and sunset,
-    // night slate (light) or day-bright (dark) by the dayness factor.
-    // Every coefficient below is a scanned constant — the full grid
-    // (7 bands x light/dark x phase x worst-case overlaps) keeps ink /
-    // sub / accent above their gates in every sky state
-    // (docs/REVIEW_v0.1.9.md). Do not retune without re-running the scan.
+    // the forecast model + the clock. Since v0.1.37 the gradient
+    // stops are the fixed concept-A sky palette (light: pale blue
+    // #8FB4E6 -> #C2DCF5 -> warm peach horizon #FDEBCB; dark: deep
+    // sky navy #132238 / #1B3350 / #243D59), pulled toward the phase
+    // colors exactly as before: warm (#FFC99A light / #8A5A38 dark)
+    // around sunrise and sunset, night slate (light) or day-bright
+    // (dark) by the dayness factor. Every coefficient below is a
+    // scanned constant — the grid (light/dark x day / dawn / night x
+    // sky and glass grounds) keeps ink / sub above their gates in
+    // every sky state (docs/FEATURE_v0.1.37.md). Do not retune
+    // without re-running the scan.
 
     private val warmSky: Int get() = if (isDark) rgb(0x8A, 0x5A, 0x38) else rgb(0xFF, 0xC9, 0x9A)
     private val nightSlate: Int = rgb(0x8E, 0xA6, 0xBE)
     private val dayBright: Int = rgb(0x35, 0x52, 0x6B)
 
     /** Phase-adjusted gradient stops for the sky (scanned formulas). */
-    private fun skyStops(tone: Tone, dayness: Float, warm: Float): Triple<Int, Int, Int> {
-        val tint = tone.tint
+    private fun skyStops(dayness: Float, warm: Float): Triple<Int, Int, Int> {
         return if (isDark) {
-            val top0 = mix(tint, paper, 0.25f)
-            val mid0 = mix(tint, paper, 0.45f)
+            val top0 = rgb(0x13, 0x22, 0x38)
+            val mid0 = rgb(0x1B, 0x33, 0x50)
+            val bot0 = rgb(0x24, 0x3D, 0x59)
             val top = mix(mix(top0, dayBright, 0.42f * dayness), warmSky, 0.18f * warm)
             val mid = mix(mix(mid0, dayBright, 0.34f * dayness), warmSky, 0.16f * warm)
-            val bot = mix(mix(paper, dayBright, 0.12f * dayness), warmSky, 0.08f * warm)
+            val bot = mix(mix(bot0, dayBright, 0.12f * dayness), warmSky, 0.08f * warm)
             Triple(top, mid, bot)
         } else {
-            val top0 = mix(tint, Color.WHITE, 0.30f)
-            val top = mix(mix(top0, warmSky, 0.32f * warm), nightSlate, 0.42f * (1f - dayness))
-            val midT = mix(nightSlate, paper, 0.35f)
-            val mid = mix(mix(tint, warmSky, 0.26f * warm), midT, 0.34f * (1f - dayness))
-            val bot = mix(paper, warmSky, 0.12f * warm)
+            val top0 = rgb(0x8F, 0xB4, 0xE6)
+            val mid0 = rgb(0xC2, 0xDC, 0xF5)
+            val bot0 = rgb(0xFD, 0xEB, 0xCB)
+            val top = mix(mix(top0, warmSky, 0.30f * warm), nightSlate, 0.40f * (1f - dayness))
+            val midT = mix(nightSlate, bot0, 0.35f)
+            val mid = mix(mix(mid0, warmSky, 0.24f * warm), midT, 0.32f * (1f - dayness))
+            val bot = mix(bot0, warmSky, 0.12f * warm)
             Triple(top, mid, bot)
         }
+    }
+
+    /**
+     * The ambient glow behind the conclusion (SkyView.State.glow):
+     * warm sunlight in light mode, a pale moonlit blue in dark —
+     * concept A's sun pool, at the scanned strengths.
+     */
+    private fun skyGlow(): Int = if (isDark) {
+        withAlpha(rgb(0x9D, 0xB8, 0xD9), 110)
+    } else {
+        withAlpha(rgb(0xFF, 0xEF, 0xD0), 170)
     }
 
     private fun smoothstepF(a: Float, b: Float, x: Float): Float {
@@ -486,22 +524,16 @@ class MainActivity : Activity() {
         return SkyWeather(cloud, dark, rain, snow, fog)
     }
 
-    private fun applyBackground(tone: Tone) {
+    private fun applyBackground() {
         val today = forecast?.day(todayStr())
         val sunriseMin = today?.let { minutesOf(it.sunrise, 360) } ?: 360
         val sunsetMin = today?.let { minutesOf(it.sunset, 1080) } ?: 1080
         val now = nowMinutesFloat()
         val dayness = daynessAt(now, sunriseMin, sunsetMin)
         val warm = warmAt(now, sunriseMin, sunsetMin)
-        val (top, mid, bot) = skyStops(tone, dayness, warm)
+        val (top, mid, bot) = skyStops(dayness, warm)
         val w = skyWeather(today)
-        // The ambient glow keeps the v0.1.6 main light's role (behind
-        // the conclusion) at the scanned strengths.
-        val glow = if (isDark) {
-            withAlpha(mix(tone.tint, Color.WHITE, 0.22f), 225)
-        } else {
-            withAlpha(tone.tint, 200)
-        }
+        val glow = skyGlow()
         skyView.skyState = SkyView.State(
             top, mid, bot, isDark, glow,
             sunriseMin, sunsetMin, dayness,
@@ -526,7 +558,12 @@ class MainActivity : Activity() {
     private lateinit var skyView: SkyView
     private lateinit var content: FrameLayout
     private lateinit var tabBar: LinearLayout
-    private lateinit var tabButtons: List<TextView>
+    /** One tab of the floating bar: its clickable row, mark, and label. */
+    private class TabButton(
+        val root: LinearLayout, val icon: IconView, val label: TextView
+    )
+
+    private lateinit var tabButtons: List<TabButton>
     private val prefs by lazy { getSharedPreferences("tenki_prefs", MODE_PRIVATE) }
 
     private var forecast: Forecast? = null
@@ -618,30 +655,45 @@ class MainActivity : Activity() {
         content = FrameLayout(this)
         rootLayout.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
+        // Floating pill tab bar (v0.1.37, concept A): the bar no
+        // longer spans the screen edge to edge as a band — it floats
+        // as one rounded glass pill with side margins, and each tab
+        // leads with its picture (HOME / CHART / SLIDERS), the
+        // selected tab a solid navy pill inside it (see showScreen).
         val tabWrap = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(12), dp(8), dp(12), dp(12))
+            setPadding(dp(16), dp(10), dp(16), dp(16))
         }
         tabBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-            background = glassBg(24, neutralTone())
+            setPadding(dp(5), dp(5), dp(5), dp(5))
+            background = glassBg(32)
         }
         val names = listOf("ホーム", "数値で見る", "設定")
+        val tabIcons = listOf(IconKind.HOME, IconKind.CHART, IconKind.SLIDERS)
         tabButtons = names.mapIndexed { i, name ->
-            TextView(this).apply {
+            val label = TextView(this).apply {
                 text = name
                 textSize = 14f
+                gravity = Gravity.CENTER
+                setPadding(dp(6), 0, 0, 0)
+            }
+            val icon = IconView(this, tabIcons[i], sub)
+            val root = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
                 contentDescription = name
                 isClickable = true
                 isFocusable = true
                 setOnClickListener { showScreen(i) }
             }
+            root.addView(icon, LinearLayout.LayoutParams(dp(20), dp(20)))
+            root.addView(label)
+            TabButton(root, icon, label)
         }
         tabButtons.forEach {
             // ART_DIRECTION §5: tab touch target is 56dp (was 52 in v0.1.4).
-            tabBar.addView(it, LinearLayout.LayoutParams(0, dp(56), 1f))
+            tabBar.addView(it.root, LinearLayout.LayoutParams(0, dp(56), 1f))
         }
         tabWrap.addView(tabBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         rootLayout.addView(tabWrap)
@@ -678,7 +730,7 @@ class MainActivity : Activity() {
             insets
         }
         rootLayout.requestApplyInsets()
-        applyBackground(neutralTone())
+        applyBackground()
         lastNightMode =
             resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
 
@@ -716,7 +768,7 @@ class MainActivity : Activity() {
         // picture. Re-applying the background refreshes the phase for
         // the current time after a long background stay.
         if (::skyView.isInitialized) {
-            applyBackground(currentTone())
+            applyBackground()
             skyView.startAnimation()
         }
     }
@@ -1114,7 +1166,6 @@ class MainActivity : Activity() {
 
     private fun showError(msg: String, network: Boolean = true) {
         content.removeAllViews()
-        val tone = neutralTone()
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -1152,19 +1203,18 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(0, dp(8), 0, dp(24))
         })
-        col.addView(primaryButton("もう一度試す", tone) { loadWeather() })
+        col.addView(primaryButton("もう一度試す") { loadWeather() })
         content.addView(col)
     }
 
     private fun showLoading() {
         content.removeAllViews()
-        val tone = currentTone()
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
         }
         val pb = ProgressBar(this)
-        pb.indeterminateDrawable?.setColorFilter(tone.accent, PorterDuff.Mode.SRC_IN)
+        pb.indeterminateDrawable?.setColorFilter(accent, PorterDuff.Mode.SRC_IN)
         col.addView(pb)
         col.addView(TextView(this).apply {
             text = "今日の答えを取りにいっています"
@@ -1175,13 +1225,13 @@ class MainActivity : Activity() {
         content.addView(col)
     }
 
-    private fun primaryButton(label: String, tone: Tone, onClick: () -> Unit): Button =
+    private fun primaryButton(label: String, onClick: () -> Unit): Button =
         Button(this).apply {
             text = label
             textSize = 16f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(onAccent(tone.accent))
-            background = solidBgStates(tone.accent, 26)
+            setTextColor(onAccent(accent))
+            background = solidBgStates(accent, 26)
             minHeight = dp(52)
             setPadding(dp(32), 0, dp(32), 0)
             setOnClickListener { onClick() }
@@ -1195,20 +1245,24 @@ class MainActivity : Activity() {
         // that produced it; leaving the tab ends that visit. (The fold
         // toggle re-enters via showScreen(1), which keeps it.)
         if (idx != 1) detailScrollY = 0
-        val tone = currentTone()
-        applyBackground(tone)
-        // The tab bar's glass carries the day's tint too (v0.1.6), so it
-        // is rebuilt with the current tone alongside the base.
-        tabBar.background = glassBg(24, tone)
+        applyBackground()
+        // The floating pill's glass is rebuilt alongside the sky
+        // (v0.1.37): white reading glass, radius 32; the selected
+        // tab is the solid sky-accent pill (radius 28, concentric
+        // with the bar's 5dp padding), icon and label recolored
+        // together.
+        tabBar.background = glassBg(32)
         tabButtons.forEachIndexed { i, b ->
             if (i == idx) {
-                b.background = solidBgStates(tone.accent, 26)
-                b.setTextColor(onAccent(tone.accent))
-                b.setTypeface(null, Typeface.BOLD)
+                b.root.background = solidBgStates(accent, 28)
+                b.label.setTextColor(onAccent(accent))
+                b.label.setTypeface(null, Typeface.BOLD)
+                b.icon.iconColor = onAccent(accent)
             } else {
-                b.background = ghostBg(26)
-                b.setTextColor(sub)
-                b.setTypeface(null, Typeface.NORMAL)
+                b.root.background = ghostBg(28)
+                b.label.setTextColor(sub)
+                b.label.setTypeface(null, Typeface.NORMAL)
+                b.icon.iconColor = sub
             }
         }
         if (loading) { showLoading(); return }
@@ -1250,30 +1304,36 @@ class MainActivity : Activity() {
     }
 
     /**
-     * 答えチップ (v0.1.13, editorial Home): one of the three answers
-     * as a bare column on the sky — the state's line icon in the day's
-     * accent, the kind label, and the short answer. No face: the B5
-     * layout has no cards on Home, so the chip is just icon + label +
-     * answer reading against the sky itself. The full sentences
-     * (main + sub) live on Detail's 今日の答え card (answerRow).
+     * 答えカード (v0.1.37, concept A): one of the three answers as a
+     * frosted-glass card floating on the sky — white reading glass
+     * (Simple Glass 正本 values, see [glassBg]), the state's line
+     * icon in the sky accent, the kind label, and the short answer.
+     * v0.1.13–0.1.36 the chips were bare columns on the sky (the B5
+     * editorial form); the concept the user picked puts the glass
+     * back under the three answers only — the conclusion and the
+     * small lines still sit directly on the sky, and Home's stack
+     * (conclusion -> person -> cards -> small lines, fixed height,
+     * no scrolling) is unchanged. The full sentences (main + sub)
+     * live on Detail's 今日の答え card (answerRow).
      */
     private fun answerChip(
-        icon: IconKind, label: String, answer: String, tone: Tone
+        icon: IconKind, label: String, answer: String
     ): LinearLayout {
         val c = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(4), 0, dp(4), 0)
+            setPadding(dp(6), dp(14), dp(6), dp(14))
+            background = glassBg(24)
         }
-        val iv = IconView(this, icon, tone.accent)
+        val iv = IconView(this, icon, accent)
         iv.contentDescription = label
-        c.addView(iv, LinearLayout.LayoutParams(dp(30), dp(30)))
+        c.addView(iv, LinearLayout.LayoutParams(dp(28), dp(28)))
         c.addView(TextView(this).apply {
             text = label
             textSize = 13f; setTextColor(sub)
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
-            setPadding(0, dp(4), 0, 0)
+            setPadding(0, dp(5), 0, 0)
         })
         c.addView(TextView(this).apply {
             text = answer
@@ -1487,12 +1547,13 @@ class MainActivity : Activity() {
     }
 
     /**
-     * The tab bar's total height (dp): tabWrap padding 8 + 12, the
-     * bar's own padding 4 + 4 and the 56dp buttons (onCreate). Only
-     * the estimate path of [homeColumnHeightDp] needs it; once the
-     * content area has been laid out its real height is read instead.
+     * The tab bar's total height (dp): tabWrap padding 10 + 16, the
+     * floating bar's own padding 5 + 5 and the 56dp tabs (onCreate).
+     * Only the estimate path of [homeColumnHeightDp] needs it; once
+     * the content area has been laid out its real height is read
+     * instead.
      */
-    private val tabBarHeightDp = 8 + 12 + 4 + 4 + 56
+    private val tabBarHeightDp = 10 + 16 + 5 + 5 + 56
 
     /**
      * Height (dp) of the Home column — the space the Home stack has
@@ -1524,10 +1585,12 @@ class MainActivity : Activity() {
      * - the conclusion: 10dp lead-in plus one fitted line height per
      *   line of [fit] (the TextViews' own lineHeight values);
      * - the gap note when present: 8dp padding + its 26dp line;
-     * - the chips: 30dp icon + 4dp label padding + 20dp label (13sp
-     *   bold, padding included — the same accounting that made the
-     *   old 116dp three-line budget) + 2dp answer padding +
-     *   [chipAnswerLines] × the answers' 20dp line height;
+     * - the answer cards (v0.1.37): 14dp card padding + 28dp icon +
+     *   5dp label padding + 20dp label (13sp bold, padding
+     *   included — the same accounting that made the old 116dp
+     *   three-line budget) + 2dp answer padding +
+     *   [chipAnswerLines] × the answers' 20dp line height + 14dp
+     *   card padding;
      * - the small lines: 10dp top padding + [smallLineCount] × their
      *   22dp line height + 5dp gaps between them.
      */
@@ -1541,21 +1604,22 @@ class MainActivity : Activity() {
         var h = 32f + 21f + headerExtraDp
         h += 10f + fit.lines.size * (fit.sizeSp * 1.22f).toInt()
         if (hasGapNote) h += 34f
-        h += 30 + 4 + 20 + 2 + chipAnswerLines * 20
+        h += 14 + 28 + 5 + 20 + 2 + chipAnswerLines * 20 + 14
         h += 10 + smallLineCount * 22 + (smallLineCount - 1).coerceAtLeast(0) * 5
         return h
     }
 
     /**
-     * How many lines the tallest of the three chip answers wraps to
-     * (1..3, the chips' maxLines), measured with the same bold face
-     * the chips render in: each chip gets a third of the column
-     * width minus its own 4+4dp padding. A non-positive width falls
-     * back to the maximum — the conservative side for the budget.
+     * How many lines the tallest of the three card answers wraps to
+     * (1..3, the cards' maxLines), measured with the same bold face
+     * the cards render in: each card gets a third of the column
+     * width minus the two 8dp gaps between the cards (v0.1.37) and
+     * its own 6+6dp padding. A non-positive width falls back to the
+     * maximum — the conservative side for the budget.
      */
     private fun chipAnswerLines(answers: List<String>): Int {
         val dm = resources.displayMetrics
-        val chipTextPx = (dm.widthPixels - dp(40)) / 3f - dp(8)
+        val chipTextPx = (dm.widthPixels - dp(40) - dp(16)) / 3f - dp(12)
         if (chipTextPx <= 0f) return 3
         val paint = Paint().apply { typeface = Typeface.DEFAULT_BOLD }
         paint.textSize = 15f * dm.scaledDensity
@@ -1598,7 +1662,6 @@ class MainActivity : Activity() {
         val dispWord = if (tomorrowMode) "明日" else "今日"
         val prevWord = if (tomorrowMode) "今日" else "昨日"
 
-        val tone = dayTone(Rules.daytimeAvg(disp))
         // The displayed day's three answers, computed once: the chips
         // and the person read the same values. (The widget snapshot
         // computes its own from today, further down.)
@@ -1612,10 +1675,12 @@ class MainActivity : Activity() {
         // lines further down read the same values.
         val pres = Rules.pressure(disp, sensitivity())
         val gapNoteText = Rules.gapNote(disp)
-        // Editorial layout (v0.1.13, the B5 pattern): no cards on
-        // Home. The sky itself is the surface — the conclusion is set
-        // in display type directly on it, the three answers are a row
-        // of bare chips at the bottom, and the rest are small lines.
+        // Editorial layout (v0.1.13, the B5 pattern; glass cards
+        // restored under the three answers only in v0.1.37). The sky
+        // itself is the surface — the conclusion is set in display
+        // type directly on it, the three answers are a row of
+        // frosted-glass cards at the bottom, and the rest are small
+        // lines.
         // The root is fixed-height; since v0.1.18 two weighted
         // spacers — one above the person, one below — split whatever
         // room the fixed parts leave, so everything fits one screen
@@ -1649,7 +1714,7 @@ class MainActivity : Activity() {
         if (tomorrowMode) {
             header.addView(TextView(this).apply {
                 text = "明日 ${Rules.dateLabel(disp.date)}"
-                textSize = 13f; setTextColor(tone.accent)
+                textSize = 13f; setTextColor(accent)
                 setTypeface(null, Typeface.BOLD)
                 setPadding(dp(10), 0, 0, 0)
             })
@@ -1694,7 +1759,12 @@ class MainActivity : Activity() {
         fit.lines.forEachIndexed { i, line ->
             conclusionGroup.addView(TextView(this).apply {
                 text = line
-                textSize = fit.sizeSp; setTextColor(tone.accent)
+                // v0.1.37: the conclusion is ink now — the mock sets
+                // it in the same deep navy as everything else on the
+                // sky (it was the day's accent). The halo stays: the
+                // re-scan measures ink on the halo at 8.64+ (light) /
+                // 14.25+ (dark) against the 3:1 large-text gate.
+                textSize = fit.sizeSp; setTextColor(ink)
                 setTypeface(null, Typeface.BOLD)
                 if (i == 0) setPadding(0, dp(10), 0, 0)
                 lineHeight = dp((fit.sizeSp * 1.22f).toInt())
@@ -1705,10 +1775,11 @@ class MainActivity : Activity() {
             // Part of the conclusion block (v0.1.5: at body size the
             // accent on the base broke the body gate; as 20sp bold it
             // is large text). It takes the same halo as the conclusion;
-            // the v0.1.13 scan measures it at 3.84+ (light) / 6.67+
-            // (dark) against the 3:1 gate — docs/LAYOUT_v0.1.13.md.
+            // in the concept-A palette the accent is ink itself in
+            // light mode and the pale sky blue in dark, both clear of
+            // the 3:1 gate on the halo (docs/FEATURE_v0.1.37.md).
             conclusionGroup.addView(TextView(this).apply {
-                text = note; textSize = 20f; setTextColor(tone.accent)
+                text = note; textSize = 20f; setTextColor(accent)
                 setTypeface(null, Typeface.BOLD)
                 setPadding(0, dp(8), 0, 0)
                 lineHeight = dp(26)
@@ -1836,22 +1907,26 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
         )
 
-        // ---- the three answers as bare chips ----
-        // Chip answers are the short forms: clothing keeps its title
+        // ---- the three answers as frosted-glass cards (v0.1.37) ----
+        // Card answers are the short forms: clothing keeps its title
         // with the spaces around the symbols closed up (the mock's
         // "ダウン＋手袋・マフラー"), sunscreen drops its own name
-        // (the label already says 日焼け止め, so the chip answers
+        // (the label already says 日焼け止め, so the card answers
         // 塗ると安心 / 不要 / 必須). Full sentences are on Detail.
+        // The cards are separated by 8dp gaps so each glass face
+        // reads as its own pill on the sky.
         val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val chipLp = { LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
         chips.addView(
-            answerChip(clothingIcon(clothing.rank), "服装", clothingChip, tone), chipLp()
+            answerChip(clothingIcon(clothing.rank), "服装", clothingChip), chipLp()
         )
         chips.addView(
-            answerChip(umbrellaIcon(umb.level), "傘", umbChip, tone), chipLp()
+            answerChip(umbrellaIcon(umb.level), "傘", umbChip),
+            chipLp().apply { leftMargin = dp(8) }
         )
         chips.addView(
-            answerChip(sunscreenIcon(disp.uvMax), "日焼け止め", sunChip, tone), chipLp()
+            answerChip(sunscreenIcon(disp.uvMax), "日焼け止め", sunChip),
+            chipLp().apply { leftMargin = dp(8) }
         )
         col.addView(chips)
         intro.add(chips)
@@ -2062,11 +2137,11 @@ class MainActivity : Activity() {
         return row
     }
 
-    private fun glassCard(tone: Tone, topMarginDp: Int): LinearLayout {
+    private fun glassCard(topMarginDp: Int): LinearLayout {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(16), dp(20), dp(16))
-            background = glassBg(24, tone)
+            background = glassBg(24)
         }
         val lp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -2112,12 +2187,11 @@ class MainActivity : Activity() {
      * design doc (数値は畳む) and folds under "くわしい数値", where
      * the hourly values finally sit in aligned columns instead of
      * wrapped text lines. Detail stays monochrome (ART_DIRECTION §7):
-     * the charts draw in ink/sub; the only hue is the day's tint that
-     * the glass and the chart's area fill already carry.
+     * the charts draw in ink/sub; the only hue is the fixed sky blue
+     * of the chart's area fill (v0.1.37; it was the day's tint).
      */
     private fun showDetail(f: Forecast) {
         val today = f.day(todayStr()) ?: run { showError("今日のデータがありません", network = false); return }
-        val tone = currentTone()
         val col = column()
         // No screen title (v0.1.7): the always-visible tab bar already
         // names this screen. The city stays: it can change.
@@ -2131,7 +2205,7 @@ class MainActivity : Activity() {
         val sortedHours = today.hours.sortedBy { it.hour }
 
         // ---- 要点カード: hero figures + the day's shape ----
-        val heroCard = glassCard(tone, 16)
+        val heroCard = glassCard(16)
         val heroLabel = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -2199,7 +2273,7 @@ class MainActivity : Activity() {
         val chart = TempChartView(
             this, sortedHours, hasProb, nowHour,
             lineColor = ink,
-            fillColor = withAlpha(tone.tint, if (isDark) 95 else 115),
+            fillColor = withAlpha(skyTint, if (isDark) 95 else 115),
             barColor = withAlpha(sub, 115),
             labelColor = sub,
             paperColor = paper
@@ -2218,7 +2292,7 @@ class MainActivity : Activity() {
         col.addView(heroCard)
 
         // ---- 気圧カード: current value + sparkline + one line ----
-        val presCard = glassCard(tone, 12)
+        val presCard = glassCard(12)
         val presHead = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -2315,7 +2389,7 @@ class MainActivity : Activity() {
         col.addView(foldHeader)
 
         if (detailExpanded) {
-            val foldCard = glassCard(tone, 8)
+            val foldCard = glassCard(8)
             foldCard.setPadding(dp(20), dp(8), dp(20), dp(8))
             detailRow(foldCard, "気温", "最高 ${fmt(today.tempMax)}℃ ／ 最低 ${fmt(today.tempMin)}℃")
             detailRow(
@@ -2384,7 +2458,7 @@ class MainActivity : Activity() {
         // record stays today's, tomorrow gets its 要点 only.
         val tomorrow = f.day(shiftedStr(1))
         if (tomorrow != null && tomorrow.hours.isNotEmpty()) {
-            val tCard = glassCard(tone, 12)
+            val tCard = glassCard(12)
             tCard.addView(TextView(this).apply {
                 text = "明日 ${Rules.dateLabel(tomorrow.date)}"
                 textSize = 16f; setTextColor(ink)
@@ -2618,13 +2692,12 @@ class MainActivity : Activity() {
      * shows the new state.
      */
     private fun showSettings() {
-        val tone = currentTone()
         val col = column()
         // No screen title (v0.1.7): the selected tab below already says
         // 設定. The 地点 section also has no description — "天気を見る
         // 場所です" only restated the label (v0.1.7).
         col.addView(sectionLabel("地点", IconKind.PIN))
-        col.addView(sectionCard(cityChips(tone), tone))
+        col.addView(sectionCard(cityChips()))
 
         col.addView(sectionLabel("体感の感じ方", IconKind.SHIRT_LONG))
         col.addView(sectionDesc("寒がり＝1枚厚く／暑がり＝1枚薄く"))
@@ -2632,13 +2705,11 @@ class MainActivity : Activity() {
         col.addView(sectionCard(
             segmentedControl(
                 listOf("寒がり", "ふつう", "暑がり"),
-                feelValues.indexOf(feelOffset()).coerceAtLeast(0),
-                tone
+                feelValues.indexOf(feelOffset()).coerceAtLeast(0)
             ) { i ->
                 prefs.edit().putInt("feel", feelValues[i]).apply()
                 showScreen(2)
-            },
-            tone
+            }
         ))
 
         col.addView(sectionLabel("気圧の感度", IconKind.PRESSURE_FALL))
@@ -2647,13 +2718,11 @@ class MainActivity : Activity() {
         col.addView(sectionCard(
             segmentedControl(
                 listOf("弱い", "ふつう", "敏感"),
-                sensValues.indexOf(sensitivity()).coerceAtLeast(0),
-                tone
+                sensValues.indexOf(sensitivity()).coerceAtLeast(0)
             ) { i ->
                 prefs.edit().putInt("sens", sensValues[i]).apply()
                 showScreen(2)
-            },
-            tone
+            }
         ))
 
         // 見た目テスト (v0.1.19): the layered person's parts can be
@@ -2662,11 +2731,11 @@ class MainActivity : Activity() {
         // おいて」). What is chosen there never reaches Home.
         col.addView(sectionLabel("見た目テスト", IconKind.TEE))
         col.addView(sectionDesc("今日の人のパーツを切り替えて試せます（ホームには影響しません）"))
-        val openTest = primaryButton("見た目テストを開く", tone) { showPersonTest() }
+        val openTest = primaryButton("見た目テストを開く") { showPersonTest() }
         openTest.layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         )
-        col.addView(sectionCard(openTest, tone))
+        col.addView(sectionCard(openTest))
 
         // Footer carries the version only (v0.1.7): the two attribution
         // lines duplicated the Detail screen, which keeps the active
@@ -2693,7 +2762,6 @@ class MainActivity : Activity() {
      * selection. Nothing here is persisted and Home never reads it.
      */
     private fun showPersonTest() {
-        val tone = currentTone()
         val today = forecast?.day(todayStr())
         val autoRank = today?.let { Rules.clothing(it, feelOffset()).rank } ?: 3
         val auto = PersonFigure.spec(
@@ -2711,7 +2779,7 @@ class MainActivity : Activity() {
         // ---- sky + person preview ----
         val preview = FrameLayout(this)
         val sky = SkyView(this)
-        sky.skyState = testSkyState(today, tone)
+        sky.skyState = testSkyState(today)
         preview.addView(
             sky,
             FrameLayout.LayoutParams(
@@ -2744,7 +2812,7 @@ class MainActivity : Activity() {
             })
         }
         fun control(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-            col.addView(sectionCard(segmentedControl(labels, selected, tone, onSelect), tone))
+            col.addView(sectionCard(segmentedControl(labels, selected, onSelect)))
         }
 
         label("空の時刻")
@@ -2787,7 +2855,7 @@ class MainActivity : Activity() {
             testHeld + 1
         ) { testHeld = it - 1; showPersonTest() }
 
-        val back = primaryButton("設定にもどる", tone) { showScreen(2) }
+        val back = primaryButton("設定にもどる") { showScreen(2) }
         val backLp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         )
@@ -2886,7 +2954,7 @@ class MainActivity : Activity() {
     }
 
     /** The test preview's sky: the day's weather at the chosen time of day. */
-    private fun testSkyState(today: DayForecast?, tone: Tone): SkyView.State {
+    private fun testSkyState(today: DayForecast?): SkyView.State {
         val sunriseMin = today?.let { minutesOf(it.sunrise, 360) } ?: 360
         val sunsetMin = today?.let { minutesOf(it.sunset, 1080) } ?: 1080
         val minutes = when (testSky) {
@@ -2897,13 +2965,9 @@ class MainActivity : Activity() {
         }
         val dayness = daynessAt(minutes, sunriseMin, sunsetMin)
         val warm = warmAt(minutes, sunriseMin, sunsetMin)
-        val (top, mid, bot) = skyStops(tone, dayness, warm)
+        val (top, mid, bot) = skyStops(dayness, warm)
         val w = skyWeather(today)
-        val glow = if (isDark) {
-            withAlpha(mix(tone.tint, Color.WHITE, 0.22f), 225)
-        } else {
-            withAlpha(tone.tint, 200)
-        }
+        val glow = skyGlow()
         return SkyView.State(
             top, mid, bot, isDark, glow,
             sunriseMin, sunsetMin, dayness,
@@ -2913,20 +2977,22 @@ class MainActivity : Activity() {
 
     /**
      * Segmented control (v0.1.8): the tab bar's pattern reused — a
-     * tinted pill container, the selected segment a solid accent pill,
-     * the rest quiet text. State reads from fill + bold + label, never
-     * from color alone. Registered in UI_CATALOG.
+     * pale sky pill container, the selected segment a solid accent
+     * pill, the rest quiet text. State reads from fill + bold +
+     * label, never from color alone. Registered in UI_CATALOG.
+     * (v0.1.37: the container was the day's tint; it is a fixed pale
+     * sky grey-blue now, like everything else in the concept-A
+     * world.)
      */
     private fun segmentedControl(
         labels: List<String>,
         selected: Int,
-        tone: Tone,
         onSelect: (Int) -> Unit
     ): LinearLayout {
         val containerColors = if (isDark) {
-            intArrayOf(mix(tone.tint, Color.BLACK, 0.42f), mix(tone.tint, Color.BLACK, 0.50f))
+            intArrayOf(rgb(0x27, 0x3D, 0x59), rgb(0x1E, 0x31, 0x4A))
         } else {
-            intArrayOf(mix(tone.tint, Color.WHITE, 0.55f), mix(tone.tint, Color.WHITE, 0.45f))
+            intArrayOf(rgb(0xD9, 0xE5, 0xF3), rgb(0xC7, 0xD8, 0xEE))
         }
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -2945,8 +3011,8 @@ class MainActivity : Activity() {
                 isFocusable = true
                 minHeight = dp(48)
                 if (i == selected) {
-                    background = solidBgStates(tone.accent, 24)
-                    setTextColor(onAccent(tone.accent))
+                    background = solidBgStates(accent, 24)
+                    setTextColor(onAccent(accent))
                     setTypeface(null, Typeface.BOLD)
                 } else {
                     background = ghostBg(24)
@@ -2961,7 +3027,7 @@ class MainActivity : Activity() {
     }
 
     /** 地点 chips (v0.1.8): 4 per row; selected = solid accent pill, others = outlined quiet pills. */
-    private fun cityChips(tone: Tone): LinearLayout {
+    private fun cityChips(): LinearLayout {
         val wrap = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         Cities.list.chunked(4).forEachIndexed { rowIdx, rowCities ->
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -2976,8 +3042,8 @@ class MainActivity : Activity() {
                     isFocusable = true
                     minHeight = dp(48)
                     if (selected) {
-                        background = solidBgStates(tone.accent, 24)
-                        setTextColor(onAccent(tone.accent))
+                        background = solidBgStates(accent, 24)
+                        setTextColor(onAccent(accent))
                         setTypeface(null, Typeface.BOLD)
                     } else {
                         background = chipGhostBg()
@@ -3012,20 +3078,23 @@ class MainActivity : Activity() {
             cornerRadius = dp(24).toFloat()
             setStroke(dp(1), stroke)
         }
-        val pressedFill = if (isDark) argb(48, 255, 255, 255) else argb(80, 255, 255, 255)
-        val normalFill = if (isDark) argb(20, 255, 255, 255) else argb(48, 255, 255, 255)
+        // v0.1.37: the quiet fill is a touch stronger than before —
+        // the chips now sit on a glass card over the fixed sky, and
+        // the old 19% white washed out against the pale horizon.
+        val pressedFill = if (isDark) argb(64, 255, 255, 255) else argb(140, 255, 255, 255)
+        val normalFill = if (isDark) argb(36, 255, 255, 255) else argb(90, 255, 255, 255)
         val states = StateListDrawable()
         states.addState(intArrayOf(android.R.attr.state_pressed), face(pressedFill))
         states.addState(intArrayOf(), face(normalFill))
         return states
     }
 
-    /** 設定の選択肢を包む色付きガラス面。行自体は面を持たない (入れ子にしない)。 */
-    private fun sectionCard(inner: View, tone: Tone): LinearLayout {
+    /** 設定の選択肢を包む読み物ガラス面。行自体は面を持たない (入れ子にしない)。 */
+    private fun sectionCard(inner: View): LinearLayout {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), dp(8))
-            background = glassBg(24, tone)
+            background = glassBg(24)
         }
         card.addView(inner)
         // The 8dp gap above the card used to come from the description's
