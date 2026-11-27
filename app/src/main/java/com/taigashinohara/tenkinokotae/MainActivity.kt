@@ -25,6 +25,7 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import java.net.HttpURLConnection
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -525,9 +526,30 @@ class MainActivity : Activity() {
         return hh * 60 + mm
     }
 
+    companion object {
+        /**
+         * Test seam, the same pattern as SkyView.clockMillis: the
+         * funnel through which the screen logic reads "now" (hour,
+         * minutes, date). Production always runs with the default —
+         * the real clock — so behaviour is unchanged; the screen
+         * tests pin it because in this environment Robolectric's
+         * clock controls (SystemClock / scheduler) do not reach
+         * System.currentTimeMillis or LocalDate.now (measured; see
+         * docs/FEATURE_v0.1.38.md and docs/FIX_TEST_CLOCK.md).
+         * Cache stamps and freshness checks keep reading the real
+         * clock directly: they are compared against real timestamps
+         * and never displayed.
+         */
+        internal var nowMillis: () -> Long = System::currentTimeMillis
+
+        /** Today in Asia/Tokyo, as read through the [nowMillis] seam. */
+        internal fun todayTokyo(): LocalDate =
+            LocalDate.ofInstant(Instant.ofEpochMilli(nowMillis()), ZoneId.of("Asia/Tokyo"))
+    }
+
     private fun nowMinutesFloat(): Float {
         val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Tokyo")).apply {
-            timeInMillis = System.currentTimeMillis()
+            timeInMillis = nowMillis()
         }
         return cal.get(java.util.Calendar.HOUR_OF_DAY) * 60f +
             cal.get(java.util.Calendar.MINUTE) + cal.get(java.util.Calendar.SECOND) / 60f
@@ -536,7 +558,7 @@ class MainActivity : Activity() {
     /** Current hour of day in Asia/Tokyo — the night-mode switch reads it. */
     private fun nowHourTokyo(): Int {
         val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Tokyo")).apply {
-            timeInMillis = System.currentTimeMillis()
+            timeInMillis = nowMillis()
         }
         return cal.get(java.util.Calendar.HOUR_OF_DAY)
     }
@@ -1228,10 +1250,10 @@ class MainActivity : Activity() {
     }
 
     private fun todayStr(): String =
-        LocalDate.now(ZoneId.of("Asia/Tokyo")).format(DateTimeFormatter.ISO_LOCAL_DATE)
+        todayTokyo().format(DateTimeFormatter.ISO_LOCAL_DATE)
 
     private fun shiftedStr(days: Long): String =
-        LocalDate.now(ZoneId.of("Asia/Tokyo")).plusDays(days)
+        todayTokyo().plusDays(days)
             .format(DateTimeFormatter.ISO_LOCAL_DATE)
 
     // ---------- state screens ----------
