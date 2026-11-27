@@ -31,7 +31,10 @@ enum class IconKind {
     UMBRELLA_OPEN, UMBRELLA_FOLDED, UMBRELLA_NONE,
     BOTTLE, BOTTLE_SLASH, BOTTLE_SUN, BOTTLE_SHADE,
     PRESSURE_STEEP, PRESSURE_FALL, PRESSURE_SLIGHT,
-    MOON, SUN, PIN, THERMOMETER, ARROW_UP, ARROW_DOWN
+    MOON, SUN, PIN, THERMOMETER, ARROW_UP, ARROW_DOWN,
+    // v0.1.37: the floating tab bar's three marks (the concept-A
+    // mock leads each tab with a picture, like the rest of the app).
+    HOME, CHART, SLIDERS
 }
 
 object Icons {
@@ -374,6 +377,43 @@ object Icons {
                 line(6.8f, 13.6f, 12f, 19f)
                 line(17.2f, 13.6f, 12f, 19f)
             }
+            IconKind.HOME -> {
+                // Roof, walls, and a door — the fixed "home" shape.
+                p.reset()
+                moveTo(3.8f, 11.2f)
+                lineTo(12f, 4f)
+                lineTo(20.2f, 11.2f)
+                canvas.drawPath(p, stroke)
+                line(6.4f, 9.6f, 6.4f, 20f)
+                line(17.6f, 9.6f, 17.6f, 20f)
+                line(6.4f, 20f, 17.6f, 20f)
+                line(10.2f, 20f, 10.2f, 15.4f)
+                line(13.8f, 20f, 13.8f, 15.4f)
+                line(10.2f, 15.4f, 13.8f, 15.4f)
+            }
+            IconKind.CHART -> {
+                // Axes + the day's line: the 数値で見る screen's own
+                // shape (its hero is a line chart).
+                line(4.5f, 4f, 4.5f, 19.5f)
+                line(4.5f, 19.5f, 20f, 19.5f)
+                p.reset()
+                moveTo(6.5f, 15.5f)
+                lineTo(10.5f, 9.5f)
+                lineTo(14f, 12.5f)
+                lineTo(18.5f, 6.5f)
+                canvas.drawPath(p, stroke)
+            }
+            IconKind.SLIDERS -> {
+                // Three adjustment sliders — the fixed "settings"
+                // shape, distinct from the sun (rays) and the gear
+                // (teeth) it could be confused with at tab size.
+                line(4f, 7f, 20f, 7f)
+                line(4f, 12f, 20f, 12f)
+                line(4f, 17f, 20f, 17f)
+                circle(9f, 7f, 1.7f, fill)
+                circle(15f, 12f, 1.7f, fill)
+                circle(7f, 17f, 1.7f, fill)
+            }
         }
     }
 }
@@ -382,8 +422,19 @@ object Icons {
 class IconView(
     ctx: Context,
     private val kind: IconKind,
-    private val iconColor: Int
+    iconColor: Int
 ) : View(ctx) {
+    /**
+     * The drawing color, re-settable: the tab bar recolors its marks
+     * when the selection moves (v0.1.37), where every other call site
+     * still passes the color once at construction.
+     */
+    var iconColor: Int = iconColor
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val s = minOf(width, height).toFloat()
