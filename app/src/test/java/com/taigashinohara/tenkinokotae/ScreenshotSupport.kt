@@ -63,15 +63,57 @@ object ScreenshotSupport {
      * the home figure holds a parasol (the v0.1.33/34 rebuilt area) and
      * the conclusion leads with the parasol/sunscreen answers.
      */
-    fun sunnyCacheJson(): String {
+    fun sunnyCacheJson(): String = weatherCacheJson(
+        code = 0, prob = 0, prec = 0.0,
+        base = 27.5, amp = 3.5, uvPeak = 9.2,
+        dailyMax = listOf(30.0, 32.0, 30.0), dailyMin = listOf(22.0, 24.0, 22.0),
+        dailyUv = listOf(8.5, 9.2, 8.5)
+    )
+
+    /** Overcast all day (code 3), mild — the v0.1.38 cloudy sky cast. */
+    fun cloudyCacheJson(): String = weatherCacheJson(
+        code = 3, prob = 20, prec = 0.0,
+        base = 19.0, amp = 3.0, uvPeak = 3.0,
+        dailyMax = listOf(21.0, 22.0, 21.0), dailyMin = listOf(15.0, 16.0, 15.0),
+        dailyUv = listOf(2.6, 3.0, 2.6)
+    )
+
+    /** Steady rain all day (code 63) — the v0.1.38 rain sky cast. */
+    fun rainCacheJson(): String = weatherCacheJson(
+        code = 63, prob = 80, prec = 2.5,
+        base = 11.0, amp = 2.5, uvPeak = 0.5,
+        dailyMax = listOf(12.0, 13.0, 12.0), dailyMin = listOf(8.0, 9.0, 8.0),
+        dailyUv = listOf(0.4, 0.5, 0.4)
+    )
+
+    /** Snow all day (code 73), around freezing — the v0.1.38 snow cast. */
+    fun snowCacheJson(): String = weatherCacheJson(
+        code = 73, prob = 70, prec = 1.2,
+        base = -0.5, amp = 1.8, uvPeak = 0.3,
+        dailyMax = listOf(0.0, 1.0, 0.0), dailyMin = listOf(-4.0, -3.0, -4.0),
+        dailyUv = listOf(0.2, 0.3, 0.2)
+    )
+
+    /**
+     * The shared fixture builder behind the weather caches: one
+     * weather code all day, a sine temperature bell peaking around
+     * 14:00, sunrise 06:00 / sunset 18:10 on all three days.
+     */
+    fun weatherCacheJson(
+        code: Int, prob: Int, prec: Double,
+        base: Double, amp: Double, uvPeak: Double,
+        dailyMax: List<Double>, dailyMin: List<Double>, dailyUv: List<Double>
+    ): String {
         val dates = listOf(today().minusDays(1), today(), today().plusDays(1))
         fun arr(values: List<String>): String = values.joinToString(",", "[", "]")
+        fun darr(values: List<Double>): String =
+            values.joinToString(",", "[", "]") { "%.1f".format(it) }
         val time = mutableListOf<String>()
         val temp = mutableListOf<String>()
         val app = mutableListOf<String>()
-        val prob = mutableListOf<String>()
-        val prec = mutableListOf<String>()
-        val code = mutableListOf<String>()
+        val probL = mutableListOf<String>()
+        val precL = mutableListOf<String>()
+        val codeL = mutableListOf<String>()
         val pres = mutableListOf<String>()
         val wind = mutableListOf<String>()
         val hum = mutableListOf<String>()
@@ -80,17 +122,17 @@ object ScreenshotSupport {
             val dayOffset = if (d == 1) 0.0 else -2.0 // yesterday/tomorrow a bit cooler
             for (h in 0..23) {
                 time.add("\"${date}T${"%02d".format(h)}:00\"")
-                // Bell curve peaking at 31℃ around 14:00, 24℃ at night.
-                val t = 27.5 + 3.5 * sin((h - 9) / 24.0 * 2 * Math.PI) + dayOffset
+                // Bell curve peaking around 14:00.
+                val t = base + amp * sin((h - 9) / 24.0 * 2 * Math.PI) + dayOffset
                 temp.add("%.1f".format(t))
                 app.add("%.1f".format(t + 1.0))
-                prob.add("0")
-                prec.add("0.0")
-                code.add("0")
+                probL.add(prob.toString())
+                precL.add("%.1f".format(prec))
+                codeL.add(code.toString())
                 pres.add((1015 + h % 3).toString())
                 wind.add("2.0")
                 hum.add("45")
-                val u = if (h in 7..17) 9.2 * sin((h - 6) / 12.0 * Math.PI) else 0.0
+                val u = if (h in 7..17) uvPeak * sin((h - 6) / 12.0 * Math.PI) else 0.0
                 uv.add("%.1f".format(max(0.0, u)))
             }
         }
@@ -101,14 +143,14 @@ object ScreenshotSupport {
         {"hourly":{
           "time":${arr(time)},"temperature_2m":${arr(temp)},
           "apparent_temperature":${arr(app)},
-          "precipitation_probability":${arr(prob)},
-          "precipitation":${arr(prec)},"weather_code":${arr(code)},
+          "precipitation_probability":${arr(probL)},
+          "precipitation":${arr(precL)},"weather_code":${arr(codeL)},
           "pressure_msl":${arr(pres)},"wind_speed_10m":${arr(wind)},
           "relative_humidity_2m":${arr(hum)},"uv_index":${arr(uv)}},
          "daily":{
           "time":$dailyTime,
-          "temperature_2m_max":[30.0,32.0,30.0],"temperature_2m_min":[22.0,24.0,22.0],
-          "apparent_temperature_max":[31.0,33.0,31.0],"uv_index_max":[8.5,9.2,8.5],
+          "temperature_2m_max":${darr(dailyMax)},"temperature_2m_min":${darr(dailyMin)},
+          "apparent_temperature_max":${darr(dailyMax.map { it + 1.0 })},"uv_index_max":${darr(dailyUv)},
           "sunrise":$sunrise,
           "sunset":$sunset}}
         """.trimIndent()
@@ -149,6 +191,27 @@ object ScreenshotSupport {
         android.os.SystemClock.setCurrentTimeMillis(fixedNightMillis())
     }
 
+    private var duskPinCache: Long = 0L
+
+    /**
+     * The frozen "dusk": the pin day at 17:50 — twenty minutes
+     * before the fixture sunset (18:10), inside the warm bump and
+     * still ahead of the 19:00 night-mode switch, so Home shows
+     * today under a sunset sky. Derived from [fixedNowMillis]
+     * (+7h50m) so it is always later than the day pin.
+     */
+    fun fixedDuskMillis(): Long {
+        if (duskPinCache == 0L) {
+            duskPinCache = fixedNowMillis() + (7L * 60 + 50) * 60 * 1000
+        }
+        return duskPinCache
+    }
+
+    /** Re-pins the sandbox wall clock to the frozen dusk (17:50). */
+    fun repinDuskClock() {
+        android.os.SystemClock.setCurrentTimeMillis(fixedDuskMillis())
+    }
+
     /**
      * Waits until the activity's background weather fetch has settled
      * (its failure/success re-render included). The fetch runs on real
@@ -173,10 +236,18 @@ object ScreenshotSupport {
     }
 
     /** Seeds the cache MainActivity.loadWeather reads first (city 大阪）. */
-    fun seedSunnyCache(context: Context) {
+    fun seedSunnyCache(context: Context) = seedCache(context, sunnyCacheJson())
+
+    fun seedCloudyCache(context: Context) = seedCache(context, cloudyCacheJson())
+
+    fun seedRainCache(context: Context) = seedCache(context, rainCacheJson())
+
+    fun seedSnowCache(context: Context) = seedCache(context, snowCacheJson())
+
+    private fun seedCache(context: Context, json: String) {
         val prefs = context.getSharedPreferences("tenki_prefs", Context.MODE_PRIVATE)
         prefs.edit()
-            .putString("cache_大阪", sunnyCacheJson())
+            .putString("cache_大阪", json)
             .putLong("cache_at_大阪", fixedNowMillis())
             .commit()
     }
