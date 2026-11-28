@@ -218,6 +218,10 @@ import kotlin.math.roundToInt
  *   off switch next to the system's reduced-motion fallback. All
  *   animation modulations only dim from the scanned static values,
  *   so the v0.1.38 contrast guarantees hold for every frame.
+ * - v0.1.40 (snow means snow only, docs/FIX_v0.1.40.md): the
+ *   precipitation fallback in skyWeather no longer lights the
+ *   rain layer on snow hours — snowy hours carry precipitation,
+ *   so streaks were drawn over the snowflakes.
  * Logic (Rules / WeatherApi / MetApi) is untouched by the design pass.
  */
 class MainActivity : Activity() {
@@ -623,8 +627,13 @@ class MainActivity : Activity() {
             95 -> { cloud = 0.95f; dark = 0.7f; rain = 2; shade = 0.85f }
             96, 99 -> { cloud = 1.0f; dark = 0.75f; rain = 3; shade = 1.0f }
         }
-        if (rain == 0 && e.precip >= 0.1) rain = 1
-        if (rain in 1..2 && e.precip >= 2.0) rain = 3
+        // v0.1.40: the precipitation fallback must not fire on snow
+        // hours — a snowy hour carries precipitation too, and lighting
+        // rain=1 there drew rain streaks over the snow layer. Snow
+        // codes mean snow only. (Fog 45/48 keeps the fallback on
+        // purpose: foggy hours can genuinely rain. See FIX_v0.1.40.)
+        if (!snow && rain == 0 && e.precip >= 0.1) rain = 1
+        if (!snow && rain in 1..2 && e.precip >= 2.0) rain = 3
         return SkyWeather(cloud, dark, rain, snow, fog, skyGroupForCode(e.weatherCode), shade)
     }
 
@@ -2888,7 +2897,7 @@ class MainActivity : Activity() {
         // source's attribution directly under the data it describes —
         // one home for attribution instead of two.
         col.addView(TextView(this).apply {
-            text = "天気のこたえ v0.1.39（プロトタイプ）"
+            text = "天気のこたえ v0.1.40（プロトタイプ）"
             textSize = 13f; setTextColor(sub)
             setPadding(0, dp(24), 0, 0)
             lineHeight = dp(21)
