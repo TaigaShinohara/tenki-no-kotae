@@ -233,6 +233,16 @@ import kotlin.math.roundToInt
  *   glass / accent / halo) follow the scene side, flipping once
  *   deep in the crossing where the re-scan shows both sides pass.
  *   uiMode is no longer read anywhere.
+ * - v0.1.42 (one glass material for both scenes, docs/
+ *   FEATURE_v0.1.42.md): the user's real-device follow-up to
+ *   v0.1.41 — 「色が変わるのはいいけど、質感とかは揃えて」. The
+ *   reading glass is now a single material: the same fill profile
+ *   (alpha 158 -> 138) and the same specular ring on both sides,
+ *   differing only in tint (white by day, the sky's mid navy
+ *   #1B3350 by night). The chip faces and the ghost pressed veil
+ *   use the same material step; the crossing thickening is one
+ *   shared curve peaking at the token flip. Sky, tokens, logic
+ *   and the widget are unchanged.
  * Logic (Rules / WeatherApi / MetApi) is untouched by the design pass.
  */
 class MainActivity : Activity() {
@@ -359,47 +369,80 @@ class MainActivity : Activity() {
         Color.argb(alpha, Color.red(c), Color.green(c), Color.blue(c))
 
     /**
-     * 読み物ガラス (v0.1.37): the glass is white again — the Simple
-     * Glass skill's reading-glass values verbatim (light: white
-     * 62% -> 54%; dark: white 19% -> 13%), under the same specular
-     * ring as always (1dp gradient edge, top white 75% -> bottom
-     * 15%, dark 38% -> 6%). The v0.1.6 colored glass (the day's tint
-     * at high alpha) existed because white over the old dark-tinted
-     * sky read as grey concrete; on concept A's fixed sky the white
-     * glass is the mock's frosted face, and its effective color over
-     * every sky stop was re-scanned with the new ink / sub
-     * (docs/FEATURE_v0.1.37.md — weakest pair: dark sub on glass
-     * over the day sky, 5.00:1). Built as two layers: the outer
-     * layer paints the edge gradient, the inner layer (inset 1dp)
-     * paints the glass fill, so only the 1dp ring stays visible.
-     * Plain Views have no backdrop blur, so the fill alone carries
-     * the separation, exactly as the skill prescribes.
+     * The reading glass's tint (v0.1.42): white in the light scene,
+     * the dark sky's own mid navy #1B3350 in the dark scene. This is
+     * the ONLY scene difference the glass material has — see
+     * [glassBg]. (The dark tint is the sky palette's mid stop, so
+     * the night glass reads as the same sky, condensed into a pane.)
+     */
+    private val glassTint: Int
+        get() = if (isDark) rgb(0x1B, 0x33, 0x50) else Color.WHITE
+
+    /**
+     * The glass's crossing thickening (v0.1.41 introduced it on the
+     * light side; v0.1.42 makes it a property of the one material,
+     * shared by both tints): while the scene crosses toward the
+     * token flip the fill alpha rises x1.32 at the flip point
+     * (sceneDark 0.90) and relaxes back to x1 at full night, so the
+     * effective ground stays on the passing side of the gate on
+     * both sides of the flip. At both endpoints (day / night) the
+     * factor is exactly 1 — the shipped day and night materials are
+     * the same profile with no thickening. The v0.1.42 re-scan
+     * models this curve (docs/FEATURE_v0.1.42.md).
+     */
+    private fun glassThicken(): Float {
+        val sd = sceneDarkNow
+        return 1f + 0.32f * smoothstepF(0.45f, 0.90f, sd) *
+            (1f - smoothstepF(0.90f, 1.00f, sd))
+    }
+
+    /**
+     * 読み物ガラス — ONE material for both scenes (v0.1.42).
+     *
+     * History: v0.1.37 shipped the Simple Glass skill's reading
+     * glass verbatim per side (light: white 62% -> 54%; dark: white
+     * 19% -> 13%; specular ring 75% -> 15% light, 38% -> 6% dark).
+     * On the real device the user reported that the buttons and
+     * cards felt like a different MATERIAL at night, not just a
+     * different color — with white at 19% -> 13% the night pane
+     * barely covers the sky (rain, stars and the figure show
+     * through; the ring nearly vanishes), while the day pane is a
+     * solid frosted panel. The user's ruling: 「色が変わるのはいい
+     * けど、質感とかは揃えて」 — color may change with the scene;
+     * the material may not.
+     *
+     * So the material is now defined once: fill = the scene tint
+     * (see [glassTint]) at alpha 158 -> 138 (62% -> 54%, the
+     * skill's light profile) on BOTH sides, under the same specular
+     * ring on both sides (1dp white gradient edge, 75% -> 15% —
+     * specular is reflected light, so it stays white; only its
+     * strength is unified). Day glass is white frosted; night glass
+     * is the same pane dyed deep navy, covering the sky by the same
+     * fraction. This deliberately departs from the skill's dark
+     * reading-glass alpha (19% -> 13%): the ground for the
+     * departure is the user's instruction above, and the v0.1.6
+     * lesson does not apply — that failure was white at low alpha
+     * over a grey-tinted sky; here the night pane is a deep tint at
+     * full profile alpha over the fixed concept-A sky, re-scanned
+     * over every reachable state (docs/FEATURE_v0.1.42.md: weakest
+     * glass pair sub x glass 5.31 light / 8.32 dark).
+     *
+     * Built as two layers: the outer layer paints the edge
+     * gradient, the inner layer (inset 1dp) paints the glass fill,
+     * so only the 1dp ring stays visible. Plain Views have no
+     * backdrop blur, so the fill alone carries the separation,
+     * exactly as the skill prescribes.
      */
     private fun glassBg(radiusDp: Int = 24): Drawable {
-        val edgeColors = if (isDark) {
-            intArrayOf(argb(97, 255, 255, 255), argb(15, 255, 255, 255))
-        } else {
-            intArrayOf(argb(191, 255, 255, 255), argb(38, 255, 255, 255))
-        }
+        val edgeColors = intArrayOf(argb(191, 255, 255, 255), argb(38, 255, 255, 255))
         val edge = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, edgeColors).apply {
             cornerRadius = dp(radiusDp).toFloat()
         }
-        val fillColors = if (isDark) {
-            intArrayOf(argb(48, 255, 255, 255), argb(33, 255, 255, 255))
-        } else {
-            // v0.1.41: while the scene crosses toward the token flip
-            // (sceneDark 0.45 -> 0.90), the light glass thickens —
-            // fill alpha x1.32 by the flip point — so its effective
-            // ground stays on the passing side of the gate even as
-            // the blended sky darkens under it. At sceneDark 0 the
-            // values are the skill's 正本 exactly (docs/
-            // FEATURE_v0.1.41.md, the re-scan models this ramp).
-            val boost = 1f + 0.32f * smoothstepF(0.45f, 0.90f, sceneDarkNow)
-            intArrayOf(
-                argb((158 * boost).toInt().coerceAtMost(255), 255, 255, 255),
-                argb((138 * boost).toInt().coerceAtMost(255), 255, 255, 255)
-            )
-        }
+        val m = glassThicken()
+        val fillColors = intArrayOf(
+            withAlpha(glassTint, (158 * m).toInt().coerceAtMost(255)),
+            withAlpha(glassTint, (138 * m).toInt().coerceAtMost(255))
+        )
         val fill = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, fillColors).apply {
             cornerRadius = dp((radiusDp - 1).coerceAtLeast(0)).toFloat()
         }
@@ -444,7 +487,11 @@ class MainActivity : Activity() {
 
     /** Transparent face for unselected tabs / rows, with a pressed state. */
     private fun ghostBg(radiusDp: Int): StateListDrawable {
-        val pressedFill = if (isDark) argb(31, 255, 255, 255) else argb(64, 255, 255, 255)
+        // v0.1.42: the pressed veil is the glass tint at one alpha on
+        // both sides (was white 64 light / 31 dark) — a step of the
+        // same material, deepening the night pane and lightening the
+        // day pane toward its own tint, so text contrast only grows.
+        val pressedFill = withAlpha(glassTint, 64)
         val pressed = GradientDrawable().apply {
             setColor(pressedFill)
             cornerRadius = dp(radiusDp).toFloat()
@@ -1475,7 +1522,8 @@ class MainActivity : Activity() {
         // Everything baked below reads the scene as of this moment.
         bakedSceneDark = isDark
         // The floating pill's glass is rebuilt alongside the sky
-        // (v0.1.37): white reading glass, radius 32; the selected
+        // (v0.1.37; one material both scenes since v0.1.42): reading
+        // glass, radius 32; the selected
         // tab is the solid sky-accent pill (radius 28, concentric
         // with the bar's 5dp padding), icon and label recolored
         // together.
@@ -1552,8 +1600,9 @@ class MainActivity : Activity() {
 
     /**
      * 答えカード (v0.1.37, concept A): one of the three answers as a
-     * frosted-glass card floating on the sky — white reading glass
-     * (Simple Glass 正本 values, see [glassBg]), the state's line
+     * frosted-glass card floating on the sky — the reading glass
+     * (one material for both scenes since v0.1.42, see [glassBg]),
+     * the state's line
      * icon in the sky accent, the kind label, and the short answer.
      * v0.1.13–0.1.36 the chips were bare columns on the sky (the B5
      * editorial form); the concept the user picked puts the glass
@@ -3027,7 +3076,7 @@ class MainActivity : Activity() {
         // source's attribution directly under the data it describes —
         // one home for attribution instead of two.
         col.addView(TextView(this).apply {
-            text = "天気のこたえ v0.1.41（プロトタイプ）"
+            text = "天気のこたえ v0.1.42（プロトタイプ）"
             textSize = 13f; setTextColor(sub)
             setPadding(0, dp(24), 0, 0)
             lineHeight = dp(21)
@@ -3363,19 +3412,31 @@ class MainActivity : Activity() {
     /** Quiet outlined pill for unselected city chips, with a pressed state. */
     private fun chipGhostBg(): StateListDrawable {
         val stroke = withAlpha(sub, 140)
-        fun face(fill: Int): GradientDrawable = GradientDrawable().apply {
-            setColor(fill)
-            cornerRadius = dp(24).toFloat()
-            setStroke(dp(1), stroke)
-        }
-        // v0.1.37: the quiet fill is a touch stronger than before —
-        // the chips now sit on a glass card over the fixed sky, and
-        // the old 19% white washed out against the pale horizon.
-        val pressedFill = if (isDark) argb(64, 255, 255, 255) else argb(140, 255, 255, 255)
-        val normalFill = if (isDark) argb(36, 255, 255, 255) else argb(90, 255, 255, 255)
+        fun face(topAlpha: Int, botAlpha: Int): GradientDrawable =
+            GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(withAlpha(glassTint, topAlpha), withAlpha(glassTint, botAlpha))
+            ).apply {
+                cornerRadius = dp(24).toFloat()
+                setStroke(dp(1), stroke)
+            }
+        // v0.1.42: the chip face is a step of the same glass material
+        // as the cards it sits on — the glass fill profile itself
+        // (158 -> 138, with the shared crossing thickening), pressed
+        // one step thicker (200 -> 180). Until v0.1.41 the face was a
+        // white veil whose alpha differed per side (90/140 light,
+        // 36/64 dark), one of the per-side texture differences the
+        // user asked to unify. The sub stroke is unchanged.
+        val m = glassThicken()
         val states = StateListDrawable()
-        states.addState(intArrayOf(android.R.attr.state_pressed), face(pressedFill))
-        states.addState(intArrayOf(), face(normalFill))
+        states.addState(intArrayOf(android.R.attr.state_pressed), face(200, 180))
+        states.addState(
+            intArrayOf(),
+            face(
+                (158 * m).toInt().coerceAtMost(255),
+                (138 * m).toInt().coerceAtMost(255)
+            )
+        )
         return states
     }
 
