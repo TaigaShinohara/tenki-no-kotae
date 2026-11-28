@@ -54,9 +54,11 @@ fun skyGroupForCode(code: Int): SkyGroup = when (code) {
  * cross the screen in minutes, rain/snow fall gently, nothing blinks
  * or flashes (thunder is drawn as dark clouds + rain, never lightning).
  * The frame loop runs only while the Activity is resumed and this
- * view is visible, capped near 30 fps; when the system asks for
- * reduced motion (animator duration scale 0 / animators disabled) or
- * battery saver is on, the sky is a still picture of the same state.
+ * view is visible and its window focused, at the display's vsync
+ * rate (v0.1.39); when the system asks for reduced motion (animator
+ * duration scale 0 / animators disabled), battery saver is on, or
+ * the user turns 空の動き off in Settings, the sky is a still
+ * picture of the same state.
  *
  * Contrast discipline (ART_DIRECTION §3 v0.1.9 追記): every sky color
  * and overlay alpha in here and in MainActivity.skyStops was verified
@@ -75,6 +77,34 @@ fun skyGroupForCode(code: Int): SkyGroup = when (code) {
  * layer competes less with the text layer. The contrast scan was
  * re-run for the new constants (all gates still pass; the margins
  * behind glass improved).
+ *
+ * v0.1.39 (the sky breathes, docs/FEATURE_v0.1.39.md): the user's
+ * ask — "天気はアニメーションにしたい。リアルでヌルヌル動く雨や、
+ * 日差しなどを目指して". Three changes, all inside the discipline
+ * above:
+ * - the frame loop posts at the display's own vsync instead of the
+ *   old ~30 fps cap (rain at 470-760 dp/s stepped visibly at
+ *   30 fps; smoothness is a frame-rate property, not a speed one).
+ *   Battery is guarded by the gates around the loop — resumed,
+ *   shown, window-focused — plus the still-picture fallbacks, not
+ *   by starving the rate.
+ * - every moving element is now a pure function of the single
+ *   animation clock [animTimeSec]: rain and snow positions are
+ *   computed from seeds in onDraw (they used to be mutated
+ *   incrementally), so a frame is fully determined by
+ *   (skyState, animTimeSec) and the screenshot tests can pin the
+ *   clock to render exact frames.
+ * - new quiet motions, each capped at or below the scanned static
+ *   values so the contrast scan's worst case still bounds every
+ *   animated frame: the sun/moon glow breathes on a 7 s swell
+ *   (factor 0.90..1.0, 1.0 at t=0), stars twinkle on slow
+ *   per-star cosine swells (period ~6-13 s, factor down to
+ *   0.4..0.7, 1.0 at t=0 — a swell, never a blink: no switching,
+ *   no flash, and thunder still draws no lightning), and rain
+ *   streaks fade in at the top and out near the ground instead of
+ *   popping at the wrap. The app setting 空の動き (default on)
+ *   joins the reduced-motion / battery-saver fallbacks: off means
+ *   the v0.1.38 still picture of the same state.
  */
 class SkyView(ctx: Context) : View(ctx) {
 
@@ -111,22 +141,53 @@ class SkyView(ctx: Context) : View(ctx) {
     // ---------- animation loop ----------
 
     private val choreographer = Choreographer.getInstance()
-    private var running = false
+
+    /**
+     * The sky's one animation clock, in seconds. Every moving
+     * element — cloud drift, rain, snow, fog, the glow's breathing,
+     * the stars' twinkle — is a pure function of this value, so a
+     * frame is fully determined by (skyState, animTimeSec). In
+     * production the frame loop below is the only thing that
+     * advances it (by real Δt); the screenshot tests pin it to
+     * render exact frames (the same seam pattern as [clockMillis]).
+     */
+    internal var animTimeSec: Float = 0f
+
+    /**
+     * The app-level escape hatch: 設定「空の動き」(default on),
+     * driven by MainActivity from its prefs. Off — like reduced
+     * motion and battery saver — means the still picture.
+     */
+    var motionEnabled: Boolean = true
+
+    /** startAnimation was asked for and not yet revoked. */
+    private var wantAnimate = false
+    private var loopRunning = false
     private var lastFrameMs = 0L
-    private var elapsedSec = 0f
 
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
-            if (!running) return
+            if (!loopRunning) return
+            if (!wantAnimate || !isShown) {
+                // Became invisible without an event reaching us
+                // first (a parent hid the whole window): stop
+                // rather than burn frames nobody can see. The
+                // visibility callbacks restart the loop on return.
+                loopRunning = false
+                return
+            }
             val nowMs = frameTimeNanos / 1_000_000L
             if (lastFrameMs != 0L) {
                 val dt = ((nowMs - lastFrameMs) / 1000f).coerceIn(0f, 0.1f)
-                elapsedSec += dt
-                updateParticles(dt)
+                animTimeSec += dt
             }
             lastFrameMs = nowMs
             invalidate()
-            choreographer.postFrameCallbackDelayed(this, 33L)
+            // v0.1.39: posted at the display's own vsync — the old
+            // 33 ms delayed repost capped the sky near 30 fps and
+            // rain stepped visibly. The gates in updateLoop (and
+            // MainActivity's resume/pause) are what guard battery.
+            choreographer.postFrameCallback(this)
         }
     }
 
@@ -144,26 +205,75 @@ class SkyView(ctx: Context) : View(ctx) {
         return pm?.isPowerSaveMode == true
     }
 
+    /**
+     * The single place that decides whether the loop is posted:
+     * wanted by the Activity, allowed by the settings, attached,
+     * shown, and not in a still-picture fallback. Every lifecycle
+     * event below just re-asks this question.
+     */
+    private fun updateLoop() {
+        val shouldRun = wantAnimate && motionEnabled && isAttachedToWindow &&
+            isShown && !reducedMotion()
+        if (shouldRun && !loopRunning) {
+            loopRunning = true
+            lastFrameMs = 0L
+            choreographer.postFrameCallback(frameCallback)
+        } else if (!shouldRun && loopRunning) {
+            loopRunning = false
+            choreographer.removeFrameCallback(frameCallback)
+        }
+    }
+
+    private fun haltLoop() {
+        if (loopRunning) {
+            loopRunning = false
+            choreographer.removeFrameCallback(frameCallback)
+        }
+    }
+
     fun startAnimation() {
-        if (running) return
-        if (reducedMotion()) {
+        wantAnimate = true
+        if (!motionEnabled || reducedMotion()) {
             // Still picture of the same sky state.
             invalidate()
             return
         }
-        running = true
-        lastFrameMs = 0L
-        choreographer.postFrameCallback(frameCallback)
+        updateLoop()
     }
 
     fun stopAnimation() {
-        running = false
-        choreographer.removeFrameCallback(frameCallback)
+        wantAnimate = false
+        haltLoop()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        updateLoop()
     }
 
     override fun onDetachedFromWindow() {
-        stopAnimation()
+        wantAnimate = false
+        haltLoop()
         super.onDetachedFromWindow()
+    }
+
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, visibility)
+        updateLoop()
+    }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        updateLoop()
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        // Losing the window's focus (another app's window, a system
+        // dialog) pauses the sky even though it stays on screen;
+        // regaining focus re-asks updateLoop, which restarts it
+        // only if it is still wanted and shown.
+        if (hasWindowFocus) updateLoop() else haltLoop()
     }
 
     // ---------- particles (fractional coords, seeded = stable layout) ----------
@@ -173,9 +283,18 @@ class SkyView(ctx: Context) : View(ctx) {
         val speedDp: Float, val alphaMul: Float
     )
 
-    private class Drop(var x: Float, var y: Float, val speed: Float, val lenDp: Float)
+    /**
+     * Rain drop / snowflake: only seeds are stored. The position at
+     * animation time t is computed in onDraw as a pure function of
+     * (seed, t) — no incremental mutation (v0.1.39), which is what
+     * makes any frame reproducible by pinning [animTimeSec]. The
+     * seed layout at t = 0 is exactly the pre-v0.1.39 initial
+     * layout, so the still picture (and the t=0 goldens) do not
+     * move when motion is off.
+     */
+    private class Drop(val seedX: Float, val seedY: Float, val speed: Float, val lenDp: Float)
     private class Flake(
-        var x: Float, var y: Float, val rDp: Float, val speed: Float, val phase: Float
+        val seedX: Float, val seedY: Float, val rDp: Float, val speed: Float, val phase: Float
     )
 
     private class Star(val x: Float, val y: Float, val rDp: Float, val alpha: Int)
@@ -200,7 +319,7 @@ class SkyView(ctx: Context) : View(ctx) {
         }
         drops = List(90) {
             Drop(
-                x = rnd.nextFloat(), y = rnd.nextFloat(),
+                seedX = rnd.nextFloat(), seedY = rnd.nextFloat(),
                 // v0.1.10: slower fall (was 620..980 dp/s) — rain reads
                 // in the open sky without flickering past the text.
                 speed = 470f + rnd.nextFloat() * 290f,
@@ -209,7 +328,7 @@ class SkyView(ctx: Context) : View(ctx) {
         }
         flakes = List(60) {
             Flake(
-                x = rnd.nextFloat(), y = rnd.nextFloat(),
+                seedX = rnd.nextFloat(), seedY = rnd.nextFloat(),
                 rDp = 1.5f + rnd.nextFloat() * 1.6f,
                 speed = 24f + rnd.nextFloat() * 20f,
                 phase = rnd.nextFloat() * 6.28f
@@ -227,35 +346,68 @@ class SkyView(ctx: Context) : View(ctx) {
         }
     }
 
-    private fun updateParticles(dt: Float) {
-        val st = skyState ?: return
-        val w = width.toFloat()
-        val h = height.toFloat()
-        if (w <= 0f || h <= 0f) return
-        val d = resources.displayMetrics.density
-        if (st.rainLevel > 0) {
-            val active = st.rainLevel * 30
-            drops.forEachIndexed { i, dr ->
-                if (i >= active) return@forEachIndexed
-                dr.y += dr.speed * d * dt / h
-                dr.x += dr.speed * 0.22f * d * dt / w
-                if (dr.y > 1.05f) {
-                    dr.y = -0.05f
-                    dr.x = Math.random().toFloat()
-                }
-                if (dr.x > 1.05f) dr.x -= 1.1f
-            }
-        }
-        if (st.snow) {
-            for (f in flakes) {
-                f.y += f.speed * d * dt / h
-                if (f.y > 1.03f) {
-                    f.y = -0.03f
-                    f.x = Math.random().toFloat()
-                }
-            }
-        }
+    // ---------- particle positions: pure functions of animTimeSec ----------
+
+    /** Per-drop slant (the wind lean), derived from the drop's own
+     *  length so no extra seed is needed: longer drops lean more. */
+    private fun dropSlant(dr: Drop): Float = 0.14f + (dr.lenDp - 9f) / 6f * 0.14f
+
+    /**
+     * A drop's position at time [t], as fractions of (w, h). The
+     * fall wraps over a 1.1-tall cycle (from just above the top
+     * edge to just below the ground); each wrap shifts the column
+     * by a fixed irrational-ish step, which reads as a fresh random
+     * column without any state. At t = 0 this returns the seed
+     * position exactly.
+     */
+    private fun dropPos(dr: Drop, t: Float, w: Float, h: Float, d: Float): Pair<Float, Float> {
+        val dist = dr.speed * d * t / h // fall distance, in height fractions
+        val travelled = dr.seedY + dist
+        var y = travelled % 1.1f
+        if (y > 1.0f) y -= 1.1f // the part of the cycle above the top edge
+        val wraps = (travelled / 1.1f).toInt()
+        val x = (dr.seedX + dropSlant(dr) * dist * h / w + wraps * 0.37f) % 1f
+        return Pair(x, y)
     }
+
+    /** A flake's height fraction at time [t] (1.06-tall wrap cycle). */
+    private fun flakeY(f: Flake, t: Float, h: Float, d: Float): Float {
+        val dist = f.speed * d * t / h
+        var y = (f.seedY + dist) % 1.06f
+        if (y > 1.0f) y -= 1.06f
+        return y
+    }
+
+    /**
+     * The sun/moon glow's breathing (v0.1.39): a 7 s swell between
+     * 1.0 and 0.90. It only ever *dims* the glow from its scanned
+     * static value (and is exactly 1.0 at t = 0), so the contrast
+     * scan's worst case still bounds every animated frame.
+     */
+    private fun breathFactor(t: Float): Float =
+        1f - 0.05f * (1f - kotlin.math.cos(t * (2.0 * PI / 7.0)).toFloat())
+
+    /**
+     * A star's twinkle (v0.1.39): a slow cosine swell whose depth
+     * and period come from the star's own seed values (period
+     * ~5.7-12.6 s). Like the breathing it only dims from the
+     * scanned static alpha and is exactly 1.0 at t = 0 — a swell,
+     * never a blink.
+     */
+    private fun twinkleFactor(s: Star, t: Float): Float {
+        val depth = 0.30f + 0.30f * ((s.alpha - 50) / 90f)
+        val speed = 0.5f + (s.rDp - 0.7f) / 0.7f * 0.6f
+        return 1f - depth * 0.5f * (1f - kotlin.math.cos(speed * t).toFloat())
+    }
+
+    // Particle paints live in fields (reused every frame; onDraw
+    // allocates nothing for the particle layers).
+    private val starPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+    private val rainPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val snowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     // ---------- helpers ----------
 
@@ -340,9 +492,10 @@ class SkyView(ctx: Context) : View(ctx) {
             val starScale = (1f - smoothstep(0.20f, 0.60f, st.dayness)) *
                 (1f - st.cloudiness * 1.4f).coerceIn(0f, 1f)
             if (starScale > 0.02f) {
-                val sp = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+                val sp = starPaint
                 for (s in stars) {
-                    sp.alpha = (s.alpha * starScale).toInt().coerceIn(0, 255)
+                    sp.alpha = (s.alpha * starScale * twinkleFactor(s, animTimeSec))
+                        .toInt().coerceIn(0, 255)
                     canvas.drawCircle(s.x * w, s.y * h, s.rDp * d, sp)
                 }
             }
@@ -361,9 +514,14 @@ class SkyView(ctx: Context) : View(ctx) {
             val cy = h * 0.168f - sin(PI * p).toFloat() * h * 0.092f
             val glowCol = if (st.dark) Color.rgb(0xF5, 0xC9, 0x7B) else Color.rgb(0xFF, 0xE9, 0xB0)
             val glowA = if (st.dark) 24 else 150
+            // v0.1.39: the glow breathes (see breathFactor) — alpha
+            // and radius swell together so the light feels alive
+            // without ever exceeding the scanned static glow.
+            val breath = breathFactor(animTimeSec)
+            val glowR = 96f * d * (1f - 0.5f * (1f - breath))
             canvas.drawCircle(
-                cx, cy, 96f * d,
-                radialPaint(cx, cy, 96f * d, withAlpha(glowCol, (glowA * sunVis).toInt()))
+                cx, cy, glowR,
+                radialPaint(cx, cy, glowR, withAlpha(glowCol, (glowA * sunVis * breath).toInt()))
             )
             val coreCol = if (st.dark) Color.rgb(0xE8, 0xA3, 0x4F) else Color.rgb(0xFF, 0xD7, 0x6A)
             val coreA = if (st.dark) 20 else 235
@@ -384,10 +542,11 @@ class SkyView(ctx: Context) : View(ctx) {
             // Same lifted arc as the sun (v0.1.10).
             val cy = h * 0.168f - sin(PI * moonP).toFloat() * h * 0.092f
             val moonCol = Color.rgb(0x9F, 0xB8, 0xCC)
+            val breath = breathFactor(animTimeSec)
             if (st.dark) {
                 canvas.drawCircle(
                     cx, cy, 85f * d,
-                    radialPaint(cx, cy, 85f * d, withAlpha(moonCol, (20 * moonVis).toInt()))
+                    radialPaint(cx, cy, 85f * d, withAlpha(moonCol, (20 * moonVis * breath).toInt()))
                 )
                 val mp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = moonCol
@@ -398,7 +557,7 @@ class SkyView(ctx: Context) : View(ctx) {
                 // Light mode: a pale daytime moon, mostly glow.
                 canvas.drawCircle(
                     cx, cy, 70f * d,
-                    radialPaint(cx, cy, 70f * d, withAlpha(Color.WHITE, (60 * moonVis).toInt()))
+                    radialPaint(cx, cy, 70f * d, withAlpha(Color.WHITE, (60 * moonVis * breath).toInt()))
                 )
                 val mp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = Color.rgb(0xF4, 0xF8, 0xFB)
@@ -429,7 +588,7 @@ class SkyView(ctx: Context) : View(ctx) {
         clouds.forEachIndexed { i, cl ->
             val wake = (st.cloudiness * clouds.size - i).coerceIn(0f, 1f)
             if (wake <= 0.01f) return@forEachIndexed
-            val frac = ((cl.seedX + elapsedSec * cl.speedDp * d / w) % 1.3f + 1.3f) % 1.3f
+            val frac = ((cl.seedX + animTimeSec * cl.speedDp * d / w) % 1.3f + 1.3f) % 1.3f
             val cx = (frac - 0.15f) * w
             val cy = cl.yFrac * h
             val s = cl.scaleDp * d
@@ -450,7 +609,7 @@ class SkyView(ctx: Context) : View(ctx) {
             val fogA = if (st.dark) 22 else 46
             for (i in 0..2) {
                 val fy = h * (0.30f + i * 0.12f)
-                val fx = w * (0.30f + 0.40f * ((i * 0.37f + elapsedSec * 0.004f) % 1f))
+                val fx = w * (0.30f + 0.40f * ((i * 0.37f + animTimeSec * 0.004f) % 1f))
                 val rp = radialPaint(fx, fy, w * 0.62f, withAlpha(fogCol, fogA))
                 canvas.save()
                 canvas.scale(1f, 0.16f, fx, fy)
@@ -461,33 +620,39 @@ class SkyView(ctx: Context) : View(ctx) {
 
         // 7) Rain streaks (front). Thin lines — they cross glyphs
         // without changing their measured contrast (see ART_DIRECTION).
+        // v0.1.39: positions are the pure dropPos(t); each streak
+        // fades in just under the top edge and out near the ground
+        // (smoothstep over its height fraction), so the wrap cycle
+        // never pops. The lean is per-drop now (dropSlant).
         if (st.rainLevel > 0) {
-            val rp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.STROKE
-                strokeWidth = 1.4f * d
-                strokeCap = Paint.Cap.ROUND
-                // v0.1.10: thinner presence over the glass (was 115 / 100).
-                color = if (st.dark) Color.argb(82, 0xCF, 0xE4, 0xF2)
-                    else Color.argb(92, 0x5B, 0x7A, 0x94)
-            }
+            val rp = rainPaint
+            rp.strokeWidth = 1.4f * d
+            // v0.1.10: thinner presence over the glass (was 115 / 100).
+            rp.color = if (st.dark) Color.rgb(0xCF, 0xE4, 0xF2) else Color.rgb(0x5B, 0x7A, 0x94)
+            val baseA = if (st.dark) 82 else 92
             val active = st.rainLevel * 30
             drops.forEachIndexed { i, dr ->
                 if (i >= active) return@forEachIndexed
-                val x = dr.x * w
-                val y = dr.y * h
+                val (fx, fy) = dropPos(dr, animTimeSec, w, h, d)
+                val fade = smoothstep(-0.05f, 0.05f, fy) * (1f - smoothstep(0.90f, 1.02f, fy))
+                if (fade <= 0.01f) return@forEachIndexed
+                rp.alpha = (baseA * fade).toInt().coerceIn(0, 255)
+                val x = fx * w
+                val y = fy * h
                 val len = dr.lenDp * d
-                canvas.drawLine(x - len * 0.22f, y - len, x, y, rp)
+                canvas.drawLine(x - len * dropSlant(dr), y - len, x, y, rp)
             }
         }
 
-        // 8) Snowflakes (front), slow with a gentle sway.
+        // 8) Snowflakes (front), slow with a gentle sway. Height is
+        // the pure flakeY(t); the sway was already a function of the
+        // animation clock, so a flake's whole path is reproducible.
         if (st.snow) {
-            val fp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = withAlpha(if (st.dark) Color.WHITE else Color.rgb(0xC7, 0xD6, 0xE2), 190)
-            }
+            val fp = snowPaint
+            fp.color = withAlpha(if (st.dark) Color.WHITE else Color.rgb(0xC7, 0xD6, 0xE2), 190)
             for (f in flakes) {
-                val fx = f.x * w + sin(elapsedSec * 0.7f + f.phase) * 8f * d
-                val fy = f.y * h
+                val fx = f.seedX * w + sin(animTimeSec * 0.7f + f.phase) * 8f * d
+                val fy = flakeY(f, animTimeSec, h, d) * h
                 canvas.drawCircle(fx, fy, f.rDp * d, fp)
             }
         }
