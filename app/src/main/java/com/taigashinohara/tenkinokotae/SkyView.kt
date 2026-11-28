@@ -105,6 +105,15 @@ fun skyGroupForCode(code: Int): SkyGroup = when (code) {
  *   popping at the wrap. The app setting 空の動き (default on)
  *   joins the reduced-motion / battery-saver fallbacks: off means
  *   the v0.1.38 still picture of the same state.
+ *
+ * v0.1.41 (the scene is the sky's own, docs/FEATURE_v0.1.41.md):
+ * the light/dark choice left the device's uiMode behind. On a
+ * dark-mode phone the old binding painted a midnight sky at 14:29
+ * (the user's real-device screenshot); now State.sceneDark — a
+ * continuous 0..1 driven by dayness — blends every particle
+ * color and alpha between the two scenes' scanned values, so at
+ * the endpoints the picture is exactly the v0.1.40 one and in
+ * between it is a true twilight, never a jump.
  */
 class SkyView(ctx: Context) : View(ctx) {
 
@@ -112,13 +121,19 @@ class SkyView(ctx: Context) : View(ctx) {
      * Everything the sky needs, computed by MainActivity from the
      * forecast model. [top]/[mid]/[bot] are the phase-adjusted
      * gradient stops (opaque). [glowColor] is the ambient tint glow
-     * behind the conclusion, alpha included.
+     * behind the conclusion, alpha included. [sceneDark] is the
+     * scene's darkness (v0.1.41): 0 = the light scene, 1 = the dark
+     * scene, driven by the phase (dayness) and the weather cast —
+     * never by the device's dark-mode setting. The gradient stops
+     * arrive already blended by it; the particle layers below blend
+     * their own colors and alphas by it here, so the whole sky
+     * crosses dawn / dusk continuously.
      */
     class State(
         val top: Int,
         val mid: Int,
         val bot: Int,
-        val dark: Boolean,
+        val sceneDark: Float,
         val glowColor: Int,
         val sunriseMin: Int,
         val sunsetMin: Int,
@@ -486,11 +501,13 @@ class SkyView(ctx: Context) : View(ctx) {
         val moonVis = (1f - smoothstep(0.20f, 0.60f, st.dayness)) *
             (1f - st.cloudiness * 0.75f)
 
-        // 3) Stars (clear nights, dark mode only — the light sky is
-        // never dark enough for them to read).
-        if (st.dark) {
+        // 3) Stars (clear nights, dark scene only — the light sky is
+        // never dark enough for them to read). v0.1.41: their
+        // strength also follows sceneDark, so they fade in across
+        // dusk instead of switching on with the scene.
+        if (st.sceneDark > 0.02f) {
             val starScale = (1f - smoothstep(0.20f, 0.60f, st.dayness)) *
-                (1f - st.cloudiness * 1.4f).coerceIn(0f, 1f)
+                (1f - st.cloudiness * 1.4f).coerceIn(0f, 1f) * st.sceneDark
             if (starScale > 0.02f) {
                 val sp = starPaint
                 for (s in stars) {
@@ -512,8 +529,14 @@ class SkyView(ctx: Context) : View(ctx) {
             // band, clear of the conclusion's first line, and the glow
             // is a touch smaller (110 -> 96dp).
             val cy = h * 0.168f - sin(PI * p).toFloat() * h * 0.092f
-            val glowCol = if (st.dark) Color.rgb(0xF5, 0xC9, 0x7B) else Color.rgb(0xFF, 0xE9, 0xB0)
-            val glowA = if (st.dark) 24 else 150
+            // v0.1.41: the sun's colors blend with the scene — in
+            // the dark scene it is the faint warm glow the contrast
+            // scan allows behind text, in the light scene the full
+            // disc; between them it dims continuously.
+            val glowCol = mix(
+                Color.rgb(0xFF, 0xE9, 0xB0), Color.rgb(0xF5, 0xC9, 0x7B), st.sceneDark
+            )
+            val glowA = (150f + (24f - 150f) * st.sceneDark).toInt()
             // v0.1.39: the glow breathes (see breathFactor) — alpha
             // and radius swell together so the light feels alive
             // without ever exceeding the scanned static glow.
@@ -523,8 +546,10 @@ class SkyView(ctx: Context) : View(ctx) {
                 cx, cy, glowR,
                 radialPaint(cx, cy, glowR, withAlpha(glowCol, (glowA * sunVis * breath).toInt()))
             )
-            val coreCol = if (st.dark) Color.rgb(0xE8, 0xA3, 0x4F) else Color.rgb(0xFF, 0xD7, 0x6A)
-            val coreA = if (st.dark) 20 else 235
+            val coreCol = mix(
+                Color.rgb(0xFF, 0xD7, 0x6A), Color.rgb(0xE8, 0xA3, 0x4F), st.sceneDark
+            )
+            val coreA = (235f + (20f - 235f) * st.sceneDark).toInt()
             val cp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = coreCol
                 alpha = (coreA * sunVis).toInt().coerceIn(0, 255)
@@ -543,41 +568,41 @@ class SkyView(ctx: Context) : View(ctx) {
             val cy = h * 0.168f - sin(PI * moonP).toFloat() * h * 0.092f
             val moonCol = Color.rgb(0x9F, 0xB8, 0xCC)
             val breath = breathFactor(animTimeSec)
-            if (st.dark) {
-                canvas.drawCircle(
-                    cx, cy, 85f * d,
-                    radialPaint(cx, cy, 85f * d, withAlpha(moonCol, (20 * moonVis * breath).toInt()))
-                )
-                val mp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = moonCol
-                    alpha = (30 * moonVis).toInt().coerceIn(0, 255)
-                }
-                canvas.drawCircle(cx, cy, 13f * d, mp)
-            } else {
-                // Light mode: a pale daytime moon, mostly glow.
-                canvas.drawCircle(
-                    cx, cy, 70f * d,
-                    radialPaint(cx, cy, 70f * d, withAlpha(Color.WHITE, (60 * moonVis * breath).toInt()))
-                )
-                val mp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = Color.rgb(0xF4, 0xF8, 0xFB)
-                    alpha = (110 * moonVis).toInt().coerceIn(0, 255)
-                }
-                canvas.drawCircle(cx, cy, 12f * d, mp)
+            // v0.1.41: the two moon faces (a pale daytime moon in
+            // the light scene, a soft glow + dim core at night)
+            // blend by sceneDark — radius, glow and core all move
+            // together, so the endpoints are the exact v0.1.40
+            // values.
+            val glowColM = mix(Color.WHITE, moonCol, st.sceneDark)
+            val glowAM = (60f + (20f - 60f) * st.sceneDark).toInt()
+            val glowRM = (70f + (85f - 70f) * st.sceneDark) * d
+            canvas.drawCircle(
+                cx, cy, glowRM,
+                radialPaint(cx, cy, glowRM, withAlpha(glowColM, (glowAM * moonVis * breath).toInt()))
+            )
+            val coreColM = mix(Color.rgb(0xF4, 0xF8, 0xFB), moonCol, st.sceneDark)
+            val coreAM = (110f + (30f - 110f) * st.sceneDark).toInt()
+            val coreRM = (12f + (13f - 12f) * st.sceneDark) * d
+            val mp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = coreColM
+                alpha = (coreAM * moonVis).toInt().coerceIn(0, 255)
             }
+            canvas.drawCircle(cx, cy, coreRM, mp)
         }
 
         // 5) Clouds. Amount (how many of the pool are awake) and
         // darkness follow the weather; they drift slowly left to right.
-        val cloudCol = if (st.dark) {
-            mix(Color.rgb(0x46, 0x58, 0x6A), Color.rgb(0x3E, 0x4C, 0x5A), st.cloudDark)
-        } else {
-            mix(Color.WHITE, Color.rgb(0xA9, 0xBF, 0xD2), st.cloudDark)
-        }
+        // v0.1.41: each scene's cloud color is computed as before,
+        // then the two blend by sceneDark.
+        val cloudCol = mix(
+            mix(Color.WHITE, Color.rgb(0xA9, 0xBF, 0xD2), st.cloudDark),
+            mix(Color.rgb(0x46, 0x58, 0x6A), Color.rgb(0x3E, 0x4C, 0x5A), st.cloudDark),
+            st.sceneDark
+        )
         // v0.1.10: fainter blobs (was 96 / 34) — clouds still read in
         // the open sky, but through the glass they sit quieter behind
         // the text. The contrast scan was re-run at these values.
-        val blobA = if (st.dark) 28 else 80
+        val blobA = (80f + (28f - 80f) * st.sceneDark).toInt()
         val blobs = arrayOf(
             floatArrayOf(0f, 0f, 1.0f),
             floatArrayOf(-0.95f, 0.18f, 0.72f),
@@ -603,10 +628,12 @@ class SkyView(ctx: Context) : View(ctx) {
 
         // 6) Fog: soft horizontal bands drifting very slowly.
         if (st.fog) {
-            val fogCol = if (st.dark) Color.rgb(0x8F, 0xA6, 0xB8) else Color.rgb(0xE9, 0xEF, 0xF3)
+            val fogCol = mix(
+                Color.rgb(0xE9, 0xEF, 0xF3), Color.rgb(0x8F, 0xA6, 0xB8), st.sceneDark
+            )
             // v0.1.10: paler (was 60 / 26) — the bands drift right
             // behind the action cards, so they give up some presence.
-            val fogA = if (st.dark) 22 else 46
+            val fogA = (46f + (22f - 46f) * st.sceneDark).toInt()
             for (i in 0..2) {
                 val fy = h * (0.30f + i * 0.12f)
                 val fx = w * (0.30f + 0.40f * ((i * 0.37f + animTimeSec * 0.004f) % 1f))
@@ -628,8 +655,12 @@ class SkyView(ctx: Context) : View(ctx) {
             val rp = rainPaint
             rp.strokeWidth = 1.4f * d
             // v0.1.10: thinner presence over the glass (was 115 / 100).
-            rp.color = if (st.dark) Color.rgb(0xCF, 0xE4, 0xF2) else Color.rgb(0x5B, 0x7A, 0x94)
-            val baseA = if (st.dark) 82 else 92
+            // v0.1.41: color and alpha blend with the scene, so rain
+            // over a night sky keeps the pale, readable face.
+            rp.color = mix(
+                Color.rgb(0x5B, 0x7A, 0x94), Color.rgb(0xCF, 0xE4, 0xF2), st.sceneDark
+            )
+            val baseA = (92f + (82f - 92f) * st.sceneDark).toInt()
             val active = st.rainLevel * 30
             drops.forEachIndexed { i, dr ->
                 if (i >= active) return@forEachIndexed
@@ -649,7 +680,9 @@ class SkyView(ctx: Context) : View(ctx) {
         // animation clock, so a flake's whole path is reproducible.
         if (st.snow) {
             val fp = snowPaint
-            fp.color = withAlpha(if (st.dark) Color.WHITE else Color.rgb(0xC7, 0xD6, 0xE2), 190)
+            fp.color = withAlpha(
+                mix(Color.rgb(0xC7, 0xD6, 0xE2), Color.WHITE, st.sceneDark), 190
+            )
             for (f in flakes) {
                 val fx = f.seedX * w + sin(animTimeSec * 0.7f + f.phase) * 8f * d
                 val fy = flakeY(f, animTimeSec, h, d) * h

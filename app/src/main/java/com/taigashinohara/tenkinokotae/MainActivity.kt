@@ -222,15 +222,58 @@ import kotlin.math.roundToInt
  *   precipitation fallback in skyWeather no longer lights the
  *   rain layer on snow hours — snowy hours carry precipitation,
  *   so streaks were drawn over the snowflakes.
+ * - v0.1.41 (the scene is the sky's own, docs/FEATURE_v0.1.41.md):
+ *   the user's real-device screenshot (a dark-mode phone, 14:29,
+ *   rain) showed the whole app in midnight navy, because the
+ *   light/dark palette followed the device's uiMode. The user
+ *   decided: 「空は時間と天気で決める」. The scene is now a
+ *   continuous sceneDark (0 = light, 1 = dark) driven by dayness
+ *   and the weather cast; the sky's stops, glow and particles
+ *   blend by it across dawn / dusk, and the UI tokens (ink / sub /
+ *   glass / accent / halo) follow the scene side, flipping once
+ *   deep in the crossing where the re-scan shows both sides pass.
+ *   uiMode is no longer read anywhere.
  * Logic (Rules / WeatherApi / MetApi) is untouched by the design pass.
  */
 class MainActivity : Activity() {
 
     // ---------- design tokens (ART_DIRECTION.md) ----------
 
+    // ---------- 空のシーン (v0.1.41) ----------
+    //
+    // The scene — light sky + navy text, or dark sky + pale text —
+    // is decided by the sky itself, never by the device's dark-mode
+    // setting (the user's decision, docs/FEATURE_v0.1.41.md: on a
+    // dark-mode phone the uiMode binding painted midnight at 14:29).
+    // sceneDark is a continuous 0..1: 1 - smoothstep over dayness,
+    // so the crossing occupies the middle of the dawn / dusk ramp
+    // (dayness 0.55 -> 0.10) and the endpoints are exactly the two
+    // shipped scenes. The sky (stops, glow, SkyView's particles)
+    // blends by it continuously. The UI tokens below cannot blend
+    // — a mid-blend text color fails the 4.5 gate against the
+    // mid-blend sky on both sides (measured, FEATURE_v0.1.41) — so
+    // they follow the scene side, [isDark], which flips once deep
+    // in the crossing (sceneDark 0.90), at a point the re-scan
+    // verifies for every pair: the small-text halo and the glass's
+    // transition thickening hold the light side up until then, and
+    // by then the blended sky is dark enough for the dark side.
+    // Sunrise / sunset are the ones applyBackground last used
+    // (defaults before the first forecast, the same defaults
+    // applyBackground itself falls back to).
+
+    private var sceneSunriseMin = 360
+    private var sceneSunsetMin = 1080
+
+    /** The scene's darkness at a moment: 0 = light scene, 1 = dark. */
+    private fun sceneDarkAt(nowMin: Float, sunriseMin: Int, sunsetMin: Int): Float =
+        1f - smoothstepF(0.10f, 0.55f, daynessAt(nowMin, sunriseMin, sunsetMin))
+
+    private val sceneDarkNow: Float
+        get() = sceneDarkAt(nowMinutesFloat(), sceneSunriseMin, sceneSunsetMin)
+
+    /** The token side of the scene: which palette the UI is baked with. */
     private val isDark: Boolean
-        get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-            Configuration.UI_MODE_NIGHT_YES
+        get() = sceneDarkNow >= 0.90f
 
     // v0.1.37 (concept A): the text colors join the sky world —
     // deep sky navy on the light sky, pale sky white on the night
@@ -344,7 +387,18 @@ class MainActivity : Activity() {
         val fillColors = if (isDark) {
             intArrayOf(argb(48, 255, 255, 255), argb(33, 255, 255, 255))
         } else {
-            intArrayOf(argb(158, 255, 255, 255), argb(138, 255, 255, 255))
+            // v0.1.41: while the scene crosses toward the token flip
+            // (sceneDark 0.45 -> 0.90), the light glass thickens —
+            // fill alpha x1.32 by the flip point — so its effective
+            // ground stays on the passing side of the gate even as
+            // the blended sky darkens under it. At sceneDark 0 the
+            // values are the skill's 正本 exactly (docs/
+            // FEATURE_v0.1.41.md, the re-scan models this ramp).
+            val boost = 1f + 0.32f * smoothstepF(0.45f, 0.90f, sceneDarkNow)
+            intArrayOf(
+                argb((158 * boost).toInt().coerceAtMost(255), 255, 255, 255),
+                argb((138 * boost).toInt().coerceAtMost(255), 255, 255, 255)
+            )
         }
         val fill = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, fillColors).apply {
             cornerRadius = dp((radiusDp - 1).coerceAtLeast(0)).toFloat()
@@ -434,16 +488,24 @@ class MainActivity : Activity() {
     // 5-minute sampling of the reachable (dayness, warm) states,
     // no group falls below the clear-sky baseline on any pair.
     // Do not retune without re-running that scan.
+    //
+    // v0.1.41: the two palettes above are now the two endpoints of
+    // one scene (see the 空のシーン section at the design tokens):
+    // skyStops blends them by sceneDark with the lower stops
+    // running ahead, and skyGlow blends likewise. The per-scene
+    // formulas and constants are unchanged — do not retune them
+    // without re-running the v0.1.41 scan (docs/FEATURE_v0.1.41.md).
 
-    private val warmSky: Int get() = if (isDark) rgb(0x8A, 0x5A, 0x38) else rgb(0xFF, 0xC9, 0x9A)
+    private val warmSkyLight: Int = rgb(0xFF, 0xC9, 0x9A)
+    private val warmSkyDark: Int = rgb(0x8A, 0x5A, 0x38)
     private val nightSlate: Int = rgb(0x8E, 0xA6, 0xBE)
     private val dayBright: Int = rgb(0x35, 0x52, 0x6B)
 
     /** One weather group's palette cast: an anchor + per-stop pull. */
     private data class SkyCast(val anchor: Int, val rTop: Float, val rMid: Float, val rBot: Float)
 
-    private fun skyCast(group: SkyGroup): SkyCast? {
-        return if (isDark) when (group) {
+    private fun skyCast(group: SkyGroup, dark: Boolean): SkyCast? {
+        return if (dark) when (group) {
             SkyGroup.CLEAR -> null
             SkyGroup.PARTLY -> SkyCast(rgb(0x0F, 0x1B, 0x2A), 0.20f, 0.18f, 0.16f)
             SkyGroup.CLOUDY -> SkyCast(rgb(0x0E, 0x19, 0x26), 0.32f, 0.30f, 0.27f)
@@ -462,14 +524,15 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Phase- and weather-adjusted gradient stops (scanned formulas). */
-    private fun skyStops(
-        dayness: Float, warm: Float, group: SkyGroup, shade: Float
+    /** One scene's phase- and weather-adjusted stops (scanned formulas). */
+    private fun sceneStops(
+        dark: Boolean, dayness: Float, warm: Float, group: SkyGroup, shade: Float
     ): Triple<Int, Int, Int> {
         var top: Int
         var mid: Int
         var bot: Int
-        if (isDark) {
+        val warmSky = if (dark) warmSkyDark else warmSkyLight
+        if (dark) {
             val top0 = rgb(0x13, 0x22, 0x38)
             val mid0 = rgb(0x1B, 0x33, 0x50)
             val bot0 = rgb(0x24, 0x3D, 0x59)
@@ -485,13 +548,37 @@ class MainActivity : Activity() {
             mid = mix(mix(mid0, warmSky, 0.24f * warm), midT, 0.32f * (1f - dayness))
             bot = mix(bot0, warmSky, 0.12f * warm)
         }
-        val cast = skyCast(group)
+        val cast = skyCast(group, dark)
         if (cast != null && shade > 0f) {
             top = mix(top, cast.anchor, cast.rTop * shade)
             mid = mix(mid, cast.anchor, cast.rMid * shade)
             bot = mix(bot, cast.anchor, cast.rBot * shade)
         }
         return Triple(top, mid, bot)
+    }
+
+    /**
+     * The gradient stops of the current scene (v0.1.41): both
+     * scenes' stops are computed with the scanned formulas above
+     * and blended by [sd] (sceneDark). The blend runs slightly
+     * ahead on the lower stops (mid x1.06, bot x1.12, capped at 1)
+     * — the ground darkens before the zenith, which is both how
+     * dusk reads and what the re-scan's tightest ground (dark
+     * glass over the bottom stop at dawn) requires. At sd 0 / 1
+     * the result is exactly the light / dark scene of v0.1.40.
+     */
+    private fun skyStops(
+        dayness: Float, warm: Float, group: SkyGroup, shade: Float, sd: Float
+    ): Triple<Int, Int, Int> {
+        val l = sceneStops(false, dayness, warm, group, shade)
+        if (sd <= 0f) return l
+        val d = sceneStops(true, dayness, warm, group, shade)
+        if (sd >= 1f) return d
+        return Triple(
+            mix(l.first, d.first, sd),
+            mix(l.second, d.second, minOf(1f, sd * 1.06f)),
+            mix(l.third, d.third, minOf(1f, sd * 1.12f))
+        )
     }
 
     /**
@@ -502,13 +589,18 @@ class MainActivity : Activity() {
      * or rainy sky has no sunny pool behind the conclusion; a clear
      * sky keeps the v0.1.37 strength exactly.
      */
-    private fun skyGlow(shade: Float): Int {
+    private fun skyGlow(shade: Float, sd: Float): Int {
         val f = 1f - 0.5f * shade
-        return if (isDark) {
-            withAlpha(rgb(0x9D, 0xB8, 0xD9), (110 * f).toInt())
-        } else {
-            withAlpha(rgb(0xFF, 0xEF, 0xD0), (170 * f).toInt())
-        }
+        val l = withAlpha(rgb(0xFF, 0xEF, 0xD0), (170 * f).toInt())
+        val d = withAlpha(rgb(0x9D, 0xB8, 0xD9), (110 * f).toInt())
+        if (sd <= 0f) return l
+        if (sd >= 1f) return d
+        // v0.1.41: color and alpha both blend with the scene.
+        val rgbPart = mix(l, d, sd)
+        val a = (Color.alpha(l) + (Color.alpha(d) - Color.alpha(l)) * sd).toInt()
+        return Color.argb(
+            a, Color.red(rgbPart), Color.green(rgbPart), Color.blue(rgbPart)
+        )
     }
 
     private fun smoothstepF(a: Float, b: Float, x: Float): Float {
@@ -641,14 +733,19 @@ class MainActivity : Activity() {
         val today = forecast?.day(todayStr())
         val sunriseMin = today?.let { minutesOf(it.sunrise, 360) } ?: 360
         val sunsetMin = today?.let { minutesOf(it.sunset, 1080) } ?: 1080
+        // The scene tokens (isDark / sceneDarkNow) read these, so
+        // they are stored before anything below touches a color.
+        sceneSunriseMin = sunriseMin
+        sceneSunsetMin = sunsetMin
         val now = nowMinutesFloat()
         val dayness = daynessAt(now, sunriseMin, sunsetMin)
         val warm = warmAt(now, sunriseMin, sunsetMin)
         val w = skyWeather(today)
-        val (top, mid, bot) = skyStops(dayness, warm, w.group, w.shade)
-        val glow = skyGlow(w.shade)
+        val sd = sceneDarkAt(now, sunriseMin, sunsetMin)
+        val (top, mid, bot) = skyStops(dayness, warm, w.group, w.shade, sd)
+        val glow = skyGlow(w.shade, sd)
         skyView.skyState = SkyView.State(
-            top, mid, bot, isDark, glow,
+            top, mid, bot, sd, glow,
             sunriseMin, sunsetMin, dayness,
             w.cloudiness, w.cloudDark, w.rainLevel, w.snow, w.fog
         )
@@ -750,13 +847,12 @@ class MainActivity : Activity() {
     /** The Detail screen's ScrollView, while it is on screen. */
     private var detailScrollView: ScrollView? = null
     /**
-     * Last seen night-mode flag. The activity declares configChanges
-     * for uiMode (BUG_REVIEW #6), so a dark-mode flip arrives via
-     * onConfigurationChanged instead of a recreation; comparing against
-     * this tells a theme flip (rebuild the screen with fresh colors)
-     * from a pure rotation (leave the hierarchy — and its scroll — be).
+     * The token side the current screen was baked with (v0.1.41).
+     * The scene can cross its flip while the app sits in the
+     * background (dusk falls); onResume compares and rebuilds so
+     * the baked colors never lag the sky by a whole evening.
      */
-    private var lastNightMode: Int = Configuration.UI_MODE_NIGHT_UNDEFINED
+    private var bakedSceneDark: Boolean? = null
 
     private fun city(): City = Cities.byName(prefs.getString("city", "大阪") ?: "大阪")
     private fun feelOffset(): Int = prefs.getInt("feel", 0)
@@ -855,8 +951,6 @@ class MainActivity : Activity() {
         }
         rootLayout.requestApplyInsets()
         applyBackground()
-        lastNightMode =
-            resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
 
         loadWeather()
     }
@@ -865,23 +959,16 @@ class MainActivity : Activity() {
      * Rotation / dark-mode flips no longer recreate this activity
      * (android:configChanges in the manifest, BUG_REVIEW #6): the
      * fetched forecast, the current tab and the fold state live in
-     * fields, so they simply survive. A pure size change needs nothing
-     * — the hierarchy stays, scroll positions stay, and SkyView
-     * redraws itself at the new size. A night-mode flip is different:
-     * every color and glass face was baked with the old mode, so the
-     * current screen is rebuilt in place with the new palette (the
-     * Detail scroll position is carried across via detailScrollY).
+     * fields, so they simply survive, and a pure size change needs
+     * nothing — the hierarchy stays, scroll positions stay, and
+     * SkyView redraws itself at the new size. Since v0.1.41 a
+     * dark-mode flip needs nothing either: no color in the app
+     * reads uiMode anymore (the scene comes from the sky itself),
+     * so there is nothing to re-bake. The override stays only to
+     * document that this is deliberate.
      */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        val night = newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK
-        if (night != lastNightMode) {
-            lastNightMode = night
-            if (currentTab == 1) {
-                detailScrollView?.let { detailScrollY = it.scrollY }
-            }
-            if (::rootLayout.isInitialized) showScreen(currentTab)
-        }
     }
 
     override fun onResume() {
@@ -895,6 +982,16 @@ class MainActivity : Activity() {
             applyBackground()
             skyView.motionEnabled = skyMotion()
             if (skyMotion()) skyView.startAnimation() else skyView.stopAnimation()
+            // v0.1.41: if the scene crossed its token flip while the
+            // app was away (the user comes back after dusk), rebuild
+            // the current screen so its baked colors follow the sky.
+            val baked = bakedSceneDark
+            if (baked != null && baked != isDark) {
+                if (currentTab == 1) {
+                    detailScrollView?.let { detailScrollY = it.scrollY }
+                }
+                showScreen(currentTab)
+            }
         }
     }
 
@@ -1302,6 +1399,7 @@ class MainActivity : Activity() {
             setTypeface(null, Typeface.BOLD)
             setTextColor(ink)
             gravity = Gravity.CENTER
+            skyHaloSmall(this)
         })
         col.addView(TextView(this).apply {
             // One sentence (v0.1.7): the second sentence only repeated
@@ -1320,6 +1418,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(0, dp(12), 0, 0)
             lineHeight = dp(26)
+            skyHaloSmall(this)
         })
         col.addView(TextView(this).apply {
             text = "（$msg）"
@@ -1327,6 +1426,7 @@ class MainActivity : Activity() {
             setTextColor(sub)
             gravity = Gravity.CENTER
             setPadding(0, dp(8), 0, dp(24))
+            skyHaloSmall(this)
         })
         col.addView(primaryButton("もう一度試す") { loadWeather() })
         content.addView(col)
@@ -1346,6 +1446,7 @@ class MainActivity : Activity() {
             textSize = 16f
             setTextColor(sub)
             setPadding(0, dp(16), 0, 0)
+            skyHaloSmall(this)
         })
         content.addView(col)
     }
@@ -1371,6 +1472,8 @@ class MainActivity : Activity() {
         // toggle re-enters via showScreen(1), which keeps it.)
         if (idx != 1) detailScrollY = 0
         applyBackground()
+        // Everything baked below reads the scene as of this moment.
+        bakedSceneDark = isDark
         // The floating pill's glass is rebuilt alongside the sky
         // (v0.1.37): white reading glass, radius 32; the selected
         // tab is the solid sky-accent pill (radius 28, concentric
@@ -1426,6 +1529,25 @@ class MainActivity : Activity() {
     private fun skyHalo(tv: TextView) {
         val c = if (isDark) argb(230, 8, 11, 16) else argb(230, 255, 255, 255)
         tv.setShadowLayer(dp(16).toFloat(), 0f, 0f, c)
+    }
+
+    /**
+     * The small-text sibling of [skyHalo] (v0.1.41): every small
+     * text that sits directly on the sky — the header, the small
+     * lines, section labels and descriptions, the error / loading
+     * words — carries this tighter halo (radius 8dp, same colors).
+     * It is what lets the token side flip deep in the scene
+     * crossing: the halo pushes the glyph's ground away from the
+     * text in luminance on both sides of the flip, so the re-scan
+     * (which models it as a 0.65 mix toward the halo color — a
+     * tighter blur dilutes the 0.90-alpha shadow less than the
+     * conclusion's 16dp halo, modeled at 0.45) passes everywhere,
+     * including the middle of dawn / dusk. See
+     * docs/FEATURE_v0.1.41.md.
+     */
+    private fun skyHaloSmall(tv: TextView) {
+        val c = if (isDark) argb(230, 8, 11, 16) else argb(230, 255, 255, 255)
+        tv.setShadowLayer(dp(8).toFloat(), 0f, 0f, c)
     }
 
     /**
@@ -1568,6 +1690,7 @@ class MainActivity : Activity() {
             textSize = 14f; setTextColor(color)
             setPadding(dp(8), 0, 0, 0)
             lineHeight = dp(22)
+            skyHaloSmall(this)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         return row
     }
@@ -1835,6 +1958,7 @@ class MainActivity : Activity() {
         header.addView(TextView(this).apply {
             text = city().name
             textSize = 13f; setTextColor(sub)
+            skyHaloSmall(this)
         })
         if (tomorrowMode) {
             header.addView(TextView(this).apply {
@@ -1842,6 +1966,7 @@ class MainActivity : Activity() {
                 textSize = 13f; setTextColor(accent)
                 setTypeface(null, Typeface.BOLD)
                 setPadding(dp(10), 0, 0, 0)
+                skyHaloSmall(this)
             })
             header.addView(
                 View(this),
@@ -1850,6 +1975,7 @@ class MainActivity : Activity() {
             header.addView(TextView(this).apply {
                 text = "今日を見る"
                 textSize = 13f; setTextColor(sub)
+                skyHaloSmall(this)
                 setPadding(dp(10), dp(6), dp(2), dp(6))
                 background = ghostBg(24)
                 isClickable = true
@@ -2080,6 +2206,7 @@ class MainActivity : Activity() {
             addLine(TextView(this).apply {
                 text = "予備のデータで表示しています"
                 textSize = 13f; setTextColor(sub)
+                skyHaloSmall(this)
             })
         }
         if (staleCache) {
@@ -2089,6 +2216,7 @@ class MainActivity : Activity() {
             addLine(TextView(this).apply {
                 text = "前回のデータを表示しています"
                 textSize = 13f; setTextColor(sub)
+                skyHaloSmall(this)
             })
         }
         if (nightNoTomorrow) {
@@ -2099,6 +2227,7 @@ class MainActivity : Activity() {
             addLine(TextView(this).apply {
                 text = "明日のデータが届いていないため、今日を表示しています"
                 textSize = 13f; setTextColor(sub)
+                skyHaloSmall(this)
             })
         }
         if (pres.visible) {
@@ -2334,6 +2463,7 @@ class MainActivity : Activity() {
         col.addView(TextView(this).apply {
             text = city().name
             textSize = 13f; setTextColor(sub)
+            skyHaloSmall(this)
         })
         val nowHour = (nowMinutesFloat() / 60).toInt()
         val cur = today.hour(nowHour)
@@ -2897,10 +3027,11 @@ class MainActivity : Activity() {
         // source's attribution directly under the data it describes —
         // one home for attribution instead of two.
         col.addView(TextView(this).apply {
-            text = "天気のこたえ v0.1.40（プロトタイプ）"
+            text = "天気のこたえ v0.1.41（プロトタイプ）"
             textSize = 13f; setTextColor(sub)
             setPadding(0, dp(24), 0, 0)
             lineHeight = dp(21)
+            skyHaloSmall(this)
         })
         content.removeAllViews()
         content.addView(scrollOf(col))
@@ -3121,10 +3252,14 @@ class MainActivity : Activity() {
         val dayness = daynessAt(minutes, sunriseMin, sunsetMin)
         val warm = warmAt(minutes, sunriseMin, sunsetMin)
         val w = skyWeather(today)
-        val (top, mid, bot) = skyStops(dayness, warm, w.group, w.shade)
-        val glow = skyGlow(w.shade)
+        // The preview's scene follows its chosen time of day, not
+        // the wall clock (v0.1.41): 昼 is the light scene and 夜 the
+        // dark one whatever the device's mode or the real hour is.
+        val sd = sceneDarkAt(minutes, sunriseMin, sunsetMin)
+        val (top, mid, bot) = skyStops(dayness, warm, w.group, w.shade, sd)
+        val glow = skyGlow(w.shade, sd)
         return SkyView.State(
-            top, mid, bot, isDark, glow,
+            top, mid, bot, sd, glow,
             sunriseMin, sunsetMin, dayness,
             w.cloudiness, w.cloudDark, w.rainLevel, w.snow, w.fog
         )
@@ -3277,6 +3412,7 @@ class MainActivity : Activity() {
             textSize = 16f; setTextColor(ink)
             setTypeface(null, Typeface.BOLD)
             setPadding(dp(8), 0, 0, 0)
+            skyHaloSmall(this)
         })
         return row
     }
@@ -3286,5 +3422,6 @@ class MainActivity : Activity() {
         textSize = 13f; setTextColor(sub)
         setPadding(0, dp(4), 0, 0)
         lineHeight = dp(21)
+        skyHaloSmall(this)
     }
 }
