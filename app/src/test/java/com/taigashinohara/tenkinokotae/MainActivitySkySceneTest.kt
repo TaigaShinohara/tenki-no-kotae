@@ -119,6 +119,40 @@ class MainActivitySkySceneTest {
     }
 
     /**
+     * Evidence only (no golden): the settings screen in the dark
+     * scene, captured for the v0.1.42 glass-material unification —
+     * the section cards, segments and city chips at night must read
+     * as the same glass material as their day forms, dyed navy.
+     * Checked by eye on the evidence copy (docs/FEATURE_v0.1.42.md).
+     */
+    @Test
+    fun nightSettings_evidence() {
+        val activity = launchWith(
+            { ScreenshotSupport.seedSunnyCache(it) },
+            { ScreenshotSupport.repinNightClock() }
+        )
+        ScreenshotSupport.repinNightClock()
+        val settings = ScreenshotSupport.findByContentDescription(
+            activity.window.decorView, "設定"
+        )
+        assertNotNull("settings tab not found", settings)
+        settings!!.performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        ScreenshotSupport.awaitSettled(activity)
+        ScreenshotSupport.repinNightClock()
+        val decor = activity.window.decorView
+        ScreenshotSupport.allViews(decor).filterIsInstance<SkyView>().forEach {
+            it.clockMillis = ScreenshotSupport::fixedNightMillis
+        }
+        val bitmap = ScreenshotSupport.drawToBitmap(decor)
+        ScreenshotSupport.assertNotBlank(bitmap, "scene_settings_night.png")
+        val outDir = File("build/outputs/sky-scene").apply { mkdirs() }
+        File(outDir, "scene_settings_night.png").outputStream().use {
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
+    }
+
+    /**
      * The mirror image: a light-mode phone at 20:00 in the rain.
      * The scene must be the dark rainy sky.
      */
