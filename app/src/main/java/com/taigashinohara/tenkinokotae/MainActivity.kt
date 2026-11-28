@@ -208,6 +208,16 @@ import kotlin.math.roundToInt
  *   follows too (day / wet-day / night / wet-night variants).
  *   Re-scanned: no group falls below the clear-sky baseline on
  *   any text pair (docs/FEATURE_v0.1.38.md).
+ * - v0.1.39 (the sky breathes, docs/FEATURE_v0.1.39.md): the user
+ *   asked for the weather itself to animate — "リアルでヌルヌル
+ *   動く雨や、日差し". The frame loop now runs at the display's
+ *   vsync (the ~30 fps cap is gone), every particle position is a
+ *   pure function of SkyView's animation clock, the sun/moon glow
+ *   breathes, stars twinkle on slow swells, rain fades at the top
+ *   and the ground — and Settings gains 空の動き， the user's own
+ *   off switch next to the system's reduced-motion fallback. All
+ *   animation modulations only dim from the scanned static values,
+ *   so the v0.1.38 contrast guarantees hold for every frame.
  * Logic (Rules / WeatherApi / MetApi) is untouched by the design pass.
  */
 class MainActivity : Activity() {
@@ -743,6 +753,17 @@ class MainActivity : Activity() {
     private fun feelOffset(): Int = prefs.getInt("feel", 0)
     private fun sensitivity(): Int = prefs.getInt("sens", 1)
 
+    /** 空の動き (v0.1.39): the app's own motion escape hatch, on unless the user turns it off. */
+    private fun skyMotion(): Boolean = prefs.getBoolean("skymotion", true)
+
+    /** Applies the 空の動き setting to the live sky at once (the settings toggle calls this). */
+    private fun applySkyMotion() {
+        if (!::skyView.isInitialized) return
+        skyView.motionEnabled = skyMotion()
+        if (skyMotion()) skyView.startAnimation() else skyView.stopAnimation()
+        skyView.invalidate()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         rootLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -863,7 +884,8 @@ class MainActivity : Activity() {
         // the current time after a long background stay.
         if (::skyView.isInitialized) {
             applyBackground()
-            skyView.startAnimation()
+            skyView.motionEnabled = skyMotion()
+            if (skyMotion()) skyView.startAnimation() else skyView.stopAnimation()
         }
     }
 
@@ -2830,6 +2852,25 @@ class MainActivity : Activity() {
             }
         ))
 
+        // 空の動き (v0.1.39): the user's own off switch for the
+        // living sky, next to the system's reduced-motion setting
+        // SkyView already honors. Off freezes the sky into the
+        // still picture of the same state — weather and time still
+        // read from the colors and the elements' places.
+        col.addView(sectionLabel("空の動き", IconKind.SUN))
+        col.addView(sectionDesc("オフ＝空は静止画になります"))
+        val motionValues = listOf(true, false)
+        col.addView(sectionCard(
+            segmentedControl(
+                listOf("オン", "オフ"),
+                motionValues.indexOf(skyMotion()).coerceAtLeast(0)
+            ) { i ->
+                prefs.edit().putBoolean("skymotion", motionValues[i]).apply()
+                applySkyMotion()
+                showScreen(2)
+            }
+        ))
+
         // 見た目テスト (v0.1.19): the layered person's parts can be
         // tried out by hand — the user's ask when the parts system
         // landed (「テスト用に見た目を切り替えれる画面も作って
@@ -2847,7 +2888,7 @@ class MainActivity : Activity() {
         // source's attribution directly under the data it describes —
         // one home for attribution instead of two.
         col.addView(TextView(this).apply {
-            text = "天気のこたえ v0.1.38（プロトタイプ）"
+            text = "天気のこたえ v0.1.39（プロトタイプ）"
             textSize = 13f; setTextColor(sub)
             setPadding(0, dp(24), 0, 0)
             lineHeight = dp(21)
