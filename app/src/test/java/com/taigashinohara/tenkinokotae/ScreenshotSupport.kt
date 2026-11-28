@@ -217,6 +217,27 @@ object ScreenshotSupport {
         android.os.SystemClock.setCurrentTimeMillis(fixedDuskMillis())
     }
 
+    private var afternoonPinCache: Long = 0L
+
+    /**
+     * The frozen "afternoon": [BASE_DATE] at 14:29 — the exact
+     * minute of the user's v0.1.41 real-device screenshot (a
+     * dark-mode phone showing a midnight sky in daytime rain).
+     * Derived from [fixedNowMillis] (+4h29m) on the same fixed date.
+     */
+    fun fixedAfternoonMillis(): Long {
+        if (afternoonPinCache == 0L) {
+            afternoonPinCache = fixedNowMillis() + (4L * 60 + 29) * 60 * 1000
+        }
+        return afternoonPinCache
+    }
+
+    /** Re-pins "now" to the frozen afternoon (14:29). */
+    fun repinAfternoonClock() {
+        MainActivity.nowMillis = { fixedAfternoonMillis() }
+        android.os.SystemClock.setCurrentTimeMillis(fixedAfternoonMillis())
+    }
+
     /**
      * Waits until the activity's background weather fetch has settled
      * (its failure/success re-render included). The fetch runs on real
